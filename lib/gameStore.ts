@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 export interface Player {
   wallet: string;
   displayName: string;
-  betAmount: number; // in lamports
+  betAmount: number;
   percentage: number;
   color: string;
   joinedAt: number;
@@ -21,10 +21,10 @@ export interface GameRound {
   id: string;
   status: 'waiting' | 'active' | 'spinning' | 'ended';
   players: Player[];
-  totalPot: number; // in lamports
+  totalPot: number;
   winnerWallet: string | null;
   winnerDisplayName: string | null;
-  winnerShare: number; // after fee
+  winnerShare: number;
   startedAt: number | null;
   endedAt: number | null;
   spinStartAt: number | null;
@@ -40,15 +40,14 @@ export interface UserAccount {
   gamesPlayed: number;
 }
 
-// In-memory stores
 const rounds: Map<string, GameRound> = new Map();
 const users: Map<string, UserAccount> = new Map();
 const chatHistory: ChatMessage[] = [];
 let currentRoundId: string | null = null;
 
-const HOUSE_FEE = 0.05; // 5%
-const COUNTDOWN_SECONDS = 30; // seconds after 2nd player joins to spin
-const MIN_BET_LAMPORTS = 10_000_000; // 0.01 SOL
+const HOUSE_FEE = 0.05;
+export const COUNTDOWN_SECONDS = 60; // 60 second countdown
+const MIN_BET_LAMPORTS = 10_000_000;
 
 const PLAYER_COLORS = [
   '#FF6B35', '#FF9F1C', '#FFBF69', '#F7B731', '#FD9644',
@@ -114,7 +113,6 @@ export function placeBet(
   const existingIdx = round.players.findIndex(p => p.wallet === wallet);
 
   if (existingIdx >= 0) {
-    // Add to existing bet
     round.players[existingIdx].betAmount += amountLamports;
     round.players[existingIdx].displayName = displayName;
   } else {
@@ -132,7 +130,6 @@ export function placeBet(
   round.totalPot += amountLamports;
   recalcPercentages(round);
 
-  // Start countdown when 2nd unique player joins
   if (round.players.length === 2 && round.status === 'waiting') {
     round.status = 'active';
     round.startedAt = Date.now();
@@ -149,7 +146,6 @@ export function spinRound(roundId: string): GameRound | null {
   round.status = 'spinning';
   round.spinStartAt = Date.now();
 
-  // Weighted random winner by bet amount
   const totalPot = round.totalPot;
   let rand = Math.random() * totalPot;
   let winner = round.players[0];
@@ -168,7 +164,6 @@ export function spinRound(roundId: string): GameRound | null {
   round.winnerDisplayName = winner.displayName;
   round.winnerShare = payout;
 
-  // Update user stats
   round.players.forEach(p => {
     const user = users.get(p.wallet);
     if (user) {
@@ -188,13 +183,11 @@ export function endRound(roundId: string): GameRound | null {
   if (!round) return null;
   round.status = 'ended';
   round.endedAt = Date.now();
-  // Create new round immediately
   currentRoundId = null;
   getOrCreateActiveRound();
   return round;
 }
 
-// User management
 export function getUser(wallet: string): UserAccount | null {
   return users.get(wallet) || null;
 }
@@ -217,7 +210,6 @@ export function upsertUser(wallet: string, displayName: string): UserAccount {
   return user;
 }
 
-// Chat
 export function addChatMessage(wallet: string, displayName: string, message: string): ChatMessage {
   const msg: ChatMessage = {
     id: uuidv4(),
@@ -239,4 +231,4 @@ export function getMinBetSol(): number {
   return MIN_BET_LAMPORTS / 1_000_000_000;
 }
 
-export { HOUSE_FEE, COUNTDOWN_SECONDS, MIN_BET_LAMPORTS };
+export { HOUSE_FEE, MIN_BET_LAMPORTS };

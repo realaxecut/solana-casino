@@ -54,35 +54,13 @@ export default function Home() {
   const wallet = publicKey?.toBase58() || null;
 
   useEffect(() => {
-    const s = io('http://5.56.24.71:3001', { transports: ['websocket', 'polling'] });
-
-    s.on('connect', () => {
-      setConnected(true);
-      s.emit('get_state');
-    });
-
+    const s = io('https://casino.wsamcserver.xyz', { transports: ['websocket', 'polling'] });
+    s.on('connect', () => { setConnected(true); s.emit('get_state'); });
     s.on('disconnect', () => setConnected(false));
-
-    s.on('round_update', (r: GameRound) => {
-      setRound(r);
-      setIsSpinning(r.status === 'spinning');
-    });
-
-    s.on('spin_started', () => {
-      setIsSpinning(true);
-    });
-
-    s.on('winner_announced', (info: WinnerInfo) => {
-      setWinnerInfo(info);
-      setShowWinner(true);
-      setIsSpinning(false);
-    });
-
-    s.on('new_round', () => {
-      setIsSpinning(false);
-      setWinnerInfo(null);
-    });
-
+    s.on('round_update', (r: GameRound) => { setRound(r); setIsSpinning(r.status === 'spinning'); });
+    s.on('spin_started', () => { setIsSpinning(true); });
+    s.on('winner_announced', (info: WinnerInfo) => { setWinnerInfo(info); setShowWinner(true); setIsSpinning(false); });
+    s.on('new_round', () => { setIsSpinning(false); setWinnerInfo(null); });
     setSocket(s);
     return () => { s.disconnect(); };
   }, []);
@@ -91,7 +69,7 @@ export default function Home() {
     if (!wallet || !socket) return;
     socket.emit('register_user', {
       wallet,
-      displayName: displayName || wallet.slice(0, 4) + '…' + wallet.slice(-4),
+      displayName: displayName || wallet.slice(0, 4) + '...' + wallet.slice(-4),
     });
   }, [wallet, socket]);
 
@@ -104,112 +82,99 @@ export default function Home() {
 
   const myPlayer = round?.players.find(p => p.wallet === wallet);
   const myBet = myPlayer?.betAmount || 0;
+  const myChance = myPlayer?.percentage || 0;
+  const potSol = round ? (round.totalPot / 1_000_000_000).toFixed(4) : '0.0000';
+  const myBetSol = (myBet / 1_000_000_000).toFixed(4);
 
   return (
     <>
       <Head>
-        <title>🍊 Orange Jackpot — Solana Casino</title>
+        <title>Orange Jackpot - Solana Casino</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
 
-        {/* Left Sidebar: Chat */}
-        <div style={{ width: chatOpen ? '260px' : '0', minWidth: chatOpen ? '260px' : '0', transition: 'all 0.3s ease', overflow: 'hidden', flexShrink: 0 }}>
-          <Chat socket={socket} currentWallet={wallet} currentDisplayName={displayName} isConnected={connected} />
+        <header style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '0 24px', height: '56px', flexShrink: 0, background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '22px' }}>🍊</span>
+            <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: '16px', color: 'var(--orange-bright)', letterSpacing: '0.05em' }}>ORANGE JACKPOT</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', paddingTop: '2px' }}>DEVNET</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? '#26DE81' : '#FC5C65', boxShadow: connected ? '0 0 6px #26DE81' : 'none' }} />
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{connected ? 'LIVE' : 'CONNECTING'}</span>
+          </div>
+          <div style={{ marginLeft: 'auto' }}>
+            <WalletMultiButton />
+          </div>
+        </header>
+
+        <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', flexShrink: 0, height: '48px' }}>
+          {[
+            { label: 'Jackpot Value', value: '◎ ' + potSol, highlight: true },
+            { label: 'Your Wager', value: '◎ ' + myBetSol },
+            { label: 'Your Chance', value: myChance > 0 ? myChance.toFixed(2) + '%' : '0.00%' },
+            { label: 'Players', value: String(round?.players.length || 0) },
+          ].map(({ label, value, highlight }, i) => (
+            <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: '100%', borderRight: i < 3 ? '1px solid var(--border-color)' : 'none', background: highlight ? 'rgba(255,107,0,0.05)' : 'transparent' }}>
+              <div style={{ fontSize: '16px', fontFamily: 'Syne, sans-serif', fontWeight: 700, color: highlight ? 'var(--orange-bright)' : 'var(--text-primary)' }}>{value}</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>{label}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Chat toggle */}
-        <button
-          onClick={() => setChatOpen(!chatOpen)}
-          style={{ position: 'absolute', left: chatOpen ? '260px' : '0', top: '50%', transform: 'translateY(-50%)', zIndex: 50, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', padding: '12px 6px', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px', transition: 'left 0.3s' }}
-        >
-          {chatOpen ? '◀' : '💬'}
-        </button>
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-        {/* Main content */}
-        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ width: chatOpen ? '240px' : '0', minWidth: chatOpen ? '240px' : '0', transition: 'all 0.3s ease', overflow: 'hidden', flexShrink: 0, borderRight: '1px solid var(--border-color)' }}>
+            <Chat socket={socket} currentWallet={wallet} currentDisplayName={displayName} isConnected={connected} />
+          </div>
 
-          {/* Header */}
-          <header style={{ borderBottom: '1px solid var(--border-color)', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-secondary)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '24px' }}>🍊</span>
-              <div>
-                <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: '18px', color: 'var(--orange-bright)', letterSpacing: '0.02em', lineHeight: 1 }}>ORANGE JACKPOT</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>SOLANA · DEVNET</div>
-              </div>
+          <button onClick={() => setChatOpen(!chatOpen)} style={{ position: 'absolute', left: chatOpen ? '240px' : '0', top: '50%', transform: 'translateY(-50%)', zIndex: 50, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', padding: '10px 5px', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', transition: 'left 0.3s' }}>
+            {chatOpen ? '<' : 'C'}
+          </button>
+
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', gap: '16px', overflow: 'auto' }}>
+            <div style={{ width: '100%', maxWidth: '460px' }}>
+              <Countdown endsAt={round?.countdownEndsAt || null} status={round?.status || 'waiting'} />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '20px', padding: '4px 12px' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? '#26DE81' : '#FC5C65', boxShadow: connected ? '0 0 6px #26DE81' : 'none' }} />
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{connected ? 'LIVE' : 'CONNECTING'}</span>
-            </div>
-
-            {round && round.totalPot > 0 && (
-              <div style={{ marginLeft: '8px', background: 'rgba(255,107,0,0.1)', border: '1px solid rgba(255,107,0,0.3)', borderRadius: '20px', padding: '4px 14px', fontSize: '13px', fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--orange-bright)' }}>
-                🏆 {(round.totalPot / 1_000_000_000).toFixed(4)} SOL
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ position: 'absolute', top: -18, left: '50%', transform: 'translateX(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: 0, height: 0, borderLeft: '10px solid transparent', borderRight: '10px solid transparent', borderTop: '18px solid var(--orange-bright)', filter: 'drop-shadow(0 0 6px rgba(255,140,0,0.8))' }} />
               </div>
-            )}
-
-            <div style={{ marginLeft: 'auto' }}>
-              <WalletMultiButton />
-            </div>
-          </header>
-
-          {/* Game area */}
-          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 360px', gap: '0', minHeight: 0 }}>
-
-            {/* Center */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', gap: '20px' }}>
-              <div style={{ width: '100%', maxWidth: '420px' }}>
-                <Countdown endsAt={round?.countdownEndsAt || null} status={round?.status || 'waiting'} />
-              </div>
-
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {isSpinning && (
-                  <div style={{ position: 'absolute', width: 420, height: 420, borderRadius: '50%', border: '3px solid transparent', borderTopColor: '#FF6B00', borderRightColor: '#FF9F1C', animation: 'spin-jackpot 0.8s linear infinite', zIndex: 0 }} />
-                )}
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                  <OrangeWheel players={round?.players || []} totalPot={round?.totalPot || 0} isSpinning={isSpinning} winnerWallet={round?.winnerWallet || null} size={380} />
-                </div>
-              </div>
-
-              {(!round || round.players.length === 0) && (
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '300px', lineHeight: 1.6 }}>
-                  The orange awaits its first slice. Place a bet to claim your piece of the jackpot!
-                </p>
+              {isSpinning && (
+                <div style={{ position: 'absolute', width: 400, height: 400, borderRadius: '50%', border: '3px solid transparent', borderTopColor: '#FF6B00', borderRightColor: '#FF9F1C', animation: 'spin-jackpot 0.6s linear infinite', zIndex: 0 }} />
               )}
-
-              <div style={{ width: '100%', maxWidth: '520px' }}>
-                <PlayerList players={round?.players || []} totalPot={round?.totalPot || 0} winnerWallet={round?.winnerWallet || null} currentWallet={wallet} />
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                <OrangeWheel players={round?.players || []} totalPot={round?.totalPot || 0} isSpinning={isSpinning} winnerWallet={round?.winnerWallet || null} size={360} />
               </div>
             </div>
 
-            {/* Right sidebar */}
-            <div style={{ borderLeft: '1px solid var(--border-color)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', background: 'var(--bg-secondary)' }}>
-              <AccountPanel displayName={displayName} onDisplayNameChange={handleDisplayNameChange} />
-              <BetPanel socket={socket} displayName={displayName} roundStatus={round?.status || 'waiting'} myBet={myBet} isConnected={connected} />
+            <div style={{ width: '100%', maxWidth: '520px' }}>
+              <PlayerList players={round?.players || []} totalPot={round?.totalPot || 0} winnerWallet={round?.winnerWallet || null} currentWallet={wallet} />
+            </div>
+          </div>
 
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px' }}>
-                <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)', letterSpacing: '0.08em', marginBottom: '12px' }}>HOW IT WORKS</div>
-                {[
-                  ['🍊', 'Buy a slice of the orange with SOL'],
-                  ['📈', 'Bigger bet = bigger slice = more chance'],
-                  ['⏳', 'Jackpot spins once 2+ players join'],
-                  ['🎰', 'Random spin picks the winner by %'],
-                  ['💰', 'Winner gets 95% of the total pot'],
-                ].map(([icon, text]) => (
-                  <div key={text as string} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '14px', flexShrink: 0 }}>{icon}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{text}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ marginTop: 'auto', fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.6 }}>
-                Orange Jackpot · Solana Devnet<br />
-                Provably Fair · 5% House Edge
-              </div>
+          <div style={{ width: '320px', flexShrink: 0, borderLeft: '1px solid var(--border-color)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', background: 'var(--bg-secondary)' }}>
+            <AccountPanel displayName={displayName} onDisplayNameChange={handleDisplayNameChange} />
+            <BetPanel socket={socket} displayName={displayName} roundStatus={round?.status || 'waiting'} myBet={myBet} isConnected={connected} />
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '10px' }}>HOW IT WORKS</div>
+              {[
+                ['🍊', 'Buy a slice with SOL - bigger bet = bigger slice'],
+                ['⏳', 'Wheel spins after 60s countdown'],
+                ['🎰', 'Spin is weighted by your % of the pot'],
+                ['💰', 'Winner takes 95% of the total pot'],
+              ].map(([icon, text]) => (
+                <div key={text as string} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '13px', flexShrink: 0 }}>{icon}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{text}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 'auto', fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.6 }}>
+              Orange Jackpot · Solana Devnet · 5% House Edge
             </div>
           </div>
         </div>
