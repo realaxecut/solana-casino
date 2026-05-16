@@ -17,8 +17,8 @@ interface ChatProps {
 }
 
 const COLORS = [
-  '#FF6B35', '#FF9F1C', '#FFBF69', '#FC5C65', '#45AAF2',
-  '#26DE81', '#A55EEA', '#FD79A8', '#74B9FF', '#55EFC4',
+  '#a78bfa', '#60a5fa', '#34d399', '#f472b6', '#fb923c',
+  '#e879f9', '#38bdf8', '#4ade80', '#fbbf24', '#f87171',
 ];
 
 function getColor(wallet: string): string {
@@ -41,15 +41,8 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
 
   useEffect(() => {
     if (!socket) return;
-
-    socket.on('chat_history', (history: ChatMessage[]) => {
-      setMessages(history);
-    });
-
-    socket.on('chat_message', (msg: ChatMessage) => {
-      setMessages((prev) => [...prev.slice(-199), msg]);
-    });
-
+    socket.on('chat_history', (history: ChatMessage[]) => setMessages(history));
+    socket.on('chat_message', (msg: ChatMessage) => setMessages(prev => [...prev.slice(-199), msg]));
     return () => {
       socket.off('chat_history');
       socket.off('chat_message');
@@ -71,140 +64,84 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
-  const formatTime = (ts: number) => {
-    const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  const formatTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: 'var(--chat-bg)',
-        borderRight: '1px solid var(--border-color)',
-      }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--chat-bg)' }}>
+
       {/* Header */}
-      <div
-        style={{
-          padding: '16px',
-          borderBottom: '1px solid var(--border-color)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}
-      >
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: isConnected ? '#26DE81' : '#FC5C65',
-            boxShadow: isConnected ? '0 0 6px #26DE81' : 'none',
-          }}
-        />
-        <span
-          style={{
-            fontFamily: 'Syne, sans-serif',
-            fontWeight: 700,
-            fontSize: '14px',
-            color: 'var(--text-secondary)',
-            letterSpacing: '0.05em',
-          }}
-        >
-          LIVE CHAT
-        </span>
-        <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-muted)' }}>
-          {messages.length} msgs
+      <div style={{
+        padding: '14px 16px',
+        borderBottom: '1px solid var(--border-color)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        background: 'rgba(139,92,246,0.04)',
+      }}>
+        <div style={{
+          width: 7, height: 7, borderRadius: '50%',
+          background: isConnected ? '#10b981' : '#ef4444',
+          boxShadow: isConnected ? '0 0 6px #10b981' : 'none',
+          flexShrink: 0,
+        }} />
+        <span style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: '12px',
+          color: 'var(--text-secondary)',
+          letterSpacing: '0.1em',
+        }}>LIVE CHAT</span>
+        <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(139,92,246,0.1)', padding: '2px 7px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.15)' }}>
+          {messages.length}
         </span>
       </div>
 
       {/* Messages */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}
-      >
+      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {messages.length === 0 && (
-          <div
-            style={{
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-              fontSize: '12px',
-              marginTop: '40px',
-            }}
-          >
+          <div style={{
+            textAlign: 'center',
+            color: 'var(--text-muted)',
+            fontSize: '12px',
+            marginTop: '48px',
+            lineHeight: 1.8,
+          }}>
+            <div style={{ fontSize: '28px', marginBottom: '8px' }}>💬</div>
             No messages yet.
-            <br />
-            Be the first to chat!
+            <br />Be the first to chat!
           </div>
         )}
-
         {messages.map((msg) => {
           const isOwn = msg.wallet === currentWallet;
           const color = getColor(msg.wallet);
+          const name = msg.displayName || shortenWallet(msg.wallet);
 
           return (
             <div
               key={msg.id}
               className="animate-slide-in-up"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px',
-                alignItems: isOwn ? 'flex-end' : 'flex-start',
-              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: isOwn ? 'flex-end' : 'flex-start' }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  gap: '6px',
-                  flexDirection: isOwn ? 'row-reverse' : 'row',
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color,
-                    fontFamily: 'Syne, sans-serif',
-                  }}
-                >
-                  {msg.displayName}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexDirection: isOwn ? 'row-reverse' : 'row' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color, fontFamily: 'var(--font-display)' }}>
+                  {name}
                 </span>
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                  {formatTime(msg.timestamp)}
-                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{formatTime(msg.timestamp)}</span>
               </div>
-              <div
-                style={{
-                  background: isOwn
-                    ? 'rgba(255,107,0,0.15)'
-                    : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${isOwn ? 'rgba(255,107,0,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                  borderRadius: isOwn ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                  padding: '7px 11px',
-                  fontSize: '12px',
-                  color: 'var(--text-primary)',
-                  maxWidth: '100%',
-                  wordBreak: 'break-word',
-                  lineHeight: 1.4,
-                }}
-              >
+              <div style={{
+                background: isOwn ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${isOwn ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                borderRadius: isOwn ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                padding: '7px 11px',
+                fontSize: '12px',
+                color: 'var(--text-primary)',
+                maxWidth: '95%',
+                wordBreak: 'break-word',
+                lineHeight: 1.5,
+              }}>
                 {msg.message}
               </div>
             </div>
@@ -214,37 +151,25 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
       </div>
 
       {/* Input */}
-      <div
-        style={{
-          padding: '12px',
-          borderTop: '1px solid var(--border-color)',
-          display: 'flex',
-          gap: '8px',
-        }}
-      >
+      <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px' }}>
         <input
           ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value.slice(0, 280))}
           onKeyDown={handleKey}
-          placeholder={currentWallet ? 'Say something...' : 'Connect wallet to chat'}
+          placeholder={currentWallet ? (currentDisplayName ? `Chat as ${currentDisplayName}...` : 'Say something...') : 'Connect wallet to chat'}
           disabled={!currentWallet || !isConnected}
-          style={{
-            flex: 1,
-            fontSize: '12px',
-            padding: '8px 10px',
-            borderRadius: '8px',
-          }}
+          style={{ flex: 1, fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }}
           maxLength={280}
         />
         <button
           onClick={sendMessage}
           disabled={!currentWallet || !input.trim() || !isConnected}
           className="btn-orange"
-          style={{ padding: '8px 14px', fontSize: '13px', borderRadius: '8px' }}
+          style={{ padding: '8px 13px', fontSize: '14px', borderRadius: '8px', flexShrink: 0 }}
         >
-          →
+          ›
         </button>
       </div>
     </div>

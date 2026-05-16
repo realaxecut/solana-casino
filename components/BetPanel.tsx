@@ -9,7 +9,11 @@ import {
 } from '@solana/web3.js';
 import { Socket } from 'socket.io-client';
 
-const HOUSE_WALLET = 'YOUR_HOUSE_WALLET_ADDRESS_HERE'; // Replace with your wallet
+// ─── HOUSE WALLET ───────────────────────────────────────────────────────────
+// Replace this with your actual Solana mainnet house wallet address.
+// All bets are sent here; the backend tracks them and pays out winners.
+const HOUSE_WALLET = 'REPLACE_WITH_YOUR_HOUSE_WALLET_ADDRESS';
+// ────────────────────────────────────────────────────────────────────────────
 
 interface BetPanelProps {
   socket: Socket | null;
@@ -19,7 +23,7 @@ interface BetPanelProps {
   isConnected: boolean;
 }
 
-const QUICK_BETS = [0.01, 0.05, 0.1, 0.5, 1, 5];
+const QUICK_BETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1];
 
 export default function BetPanel({ socket, displayName, roundStatus, myBet, isConnected }: BetPanelProps) {
   const { publicKey, sendTransaction } = useWallet();
@@ -36,33 +40,28 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
     setError('');
     setTxSig('');
 
+    if (HOUSE_WALLET === 'REPLACE_WITH_YOUR_HOUSE_WALLET_ADDRESS') {
+      setError('House wallet not configured — contact support.');
+      return;
+    }
+
     const solAmount = parseFloat(betAmount);
     if (isNaN(solAmount) || solAmount < 0.01) {
       setError('Minimum bet is 0.01 SOL');
       return;
     }
-
     if (roundStatus === 'spinning' || roundStatus === 'ended') {
-      setError('Round is not accepting bets right now');
+      setError('Round is closed — wait for next round');
       return;
     }
 
     setLoading(true);
     try {
       const lamports = Math.floor(solAmount * LAMPORTS_PER_SOL);
-
-      // Create transaction to send SOL to house wallet
-      // In production, this would go to a program escrow
-      const houseWallet = HOUSE_WALLET !== 'YOUR_HOUSE_WALLET_ADDRESS_HERE'
-        ? new PublicKey(HOUSE_WALLET)
-        : publicKey; // fallback to self for demo
+      const houseWalletPk = new PublicKey(HOUSE_WALLET);
 
       const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: houseWallet,
-          lamports,
-        })
+        SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: houseWalletPk, lamports })
       );
 
       const { blockhash } = await connection.getLatestBlockhash();
@@ -74,16 +73,15 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
 
       setTxSig(signature);
 
-      // Notify game server
       socket.emit('place_bet', {
         wallet,
         displayName: displayName || wallet.slice(0, 8),
         amountLamports: lamports,
+        txSignature: signature,
       });
 
     } catch (e: any) {
-      console.error(e);
-      if (e.message?.includes('rejected')) {
+      if (e.message?.includes('rejected') || e.message?.includes('cancelled')) {
         setError('Transaction cancelled');
       } else {
         setError(e.message || 'Transaction failed');
@@ -96,66 +94,60 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
   const myBetSol = (myBet / LAMPORTS_PER_SOL).toFixed(4);
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '12px',
-        padding: '20px',
-      }}
-    >
-      <div
-        style={{
-          fontFamily: 'Syne, sans-serif',
-          fontWeight: 700,
-          fontSize: '13px',
-          color: 'var(--text-secondary)',
-          letterSpacing: '0.05em',
-          marginBottom: '16px',
-        }}
-      >
+    <div style={{
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '12px',
+      padding: '18px',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Top accent */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
+        background: 'linear-gradient(90deg,#9f67fa,#22d3ee)',
+        borderRadius: '12px 12px 0 0',
+      }} />
+
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontWeight: 700,
+        fontSize: '13px',
+        color: 'var(--text-secondary)',
+        letterSpacing: '0.1em',
+        marginBottom: '14px',
+      }}>
         ENTER JACKPOT
       </div>
 
       {!wallet ? (
         <div style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-            Connect your Phantom wallet to play
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>
+            Connect your Phantom wallet<br />to place a bet
           </p>
           <WalletMultiButton />
         </div>
       ) : (
         <>
           {myBet > 0 && (
-            <div
-              style={{
-                background: 'rgba(255,107,0,0.08)',
-                border: '1px solid rgba(255,107,0,0.2)',
-                borderRadius: '8px',
-                padding: '10px 14px',
-                marginBottom: '14px',
-                fontSize: '12px',
-                color: 'var(--orange-soft)',
-              }}
-            >
-              Your current slice: <strong>{myBetSol} SOL</strong>
+            <div style={{
+              background: 'rgba(139,92,246,0.08)',
+              border: '1px solid rgba(139,92,246,0.2)',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '14px',
+              fontSize: '12px',
+              color: 'var(--purple-soft)',
+            }}>
+              Your current bet: <strong>{myBetSol} SOL</strong>
               <br />
-              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                Add more to increase your slice!
-              </span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Add more to increase your slice!</span>
             </div>
           )}
 
           {/* Amount input */}
-          <div style={{ marginBottom: '12px' }}>
-            <label
-              style={{
-                fontSize: '11px',
-                color: 'var(--text-muted)',
-                display: 'block',
-                marginBottom: '6px',
-              }}
-            >
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '5px', letterSpacing: '0.06em' }}>
               AMOUNT (SOL)
             </label>
             <input
@@ -164,40 +156,27 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
               onChange={(e) => setBetAmount(e.target.value)}
               min="0.01"
               step="0.01"
-              style={{ width: '100%', fontSize: '16px', padding: '10px 14px' }}
+              style={{ width: '100%', fontSize: '16px', padding: '10px 14px', fontFamily: 'var(--font-display)', fontWeight: 700 }}
             />
           </div>
 
-          {/* Quick bet buttons */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '6px',
-              marginBottom: '14px',
-            }}
-          >
-            {QUICK_BETS.map((amt) => (
+          {/* Quick bets */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '6px', marginBottom: '14px' }}>
+            {QUICK_BETS.map(amt => (
               <button
                 key={amt}
                 onClick={() => setBetAmount(String(amt))}
                 style={{
-                  padding: '6px',
+                  padding: '7px 4px',
                   fontSize: '11px',
-                  background:
-                    betAmount === String(amt)
-                      ? 'rgba(255,107,0,0.2)'
-                      : 'var(--bg-secondary)',
-                  border: `1px solid ${
-                    betAmount === String(amt)
-                      ? 'rgba(255,107,0,0.5)'
-                      : 'var(--border-color)'
-                  }`,
-                  borderRadius: '6px',
-                  color: betAmount === String(amt) ? 'var(--orange-soft)' : 'var(--text-muted)',
+                  background: betAmount === String(amt) ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${betAmount === String(amt) ? 'rgba(139,92,246,0.5)' : 'var(--border-color)'}`,
+                  borderRadius: '7px',
+                  color: betAmount === String(amt) ? 'var(--purple-soft)' : 'var(--text-muted)',
                   cursor: 'pointer',
-                  transition: 'all 0.2s',
+                  transition: 'all 0.15s',
                   fontFamily: 'Space Mono, monospace',
+                  fontWeight: betAmount === String(amt) ? 700 : 400,
                 }}
               >
                 {amt}◎
@@ -209,72 +188,32 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
           <button
             onClick={handleBet}
             disabled={loading || !isAcceptingBets || !isConnected}
-            className="btn-orange"
-            style={{
-              width: '100%',
-              padding: '14px',
-              fontSize: '15px',
-              letterSpacing: '0.05em',
-              fontFamily: 'Syne, sans-serif',
-            }}
+            className="btn-primary"
+            style={{ width: '100%', padding: '14px', fontSize: '14px', letterSpacing: '0.04em' }}
           >
             {loading
               ? '⏳ CONFIRMING...'
               : !isAcceptingBets
               ? '🔒 ROUND CLOSED'
-              : `🍊 BUY SLICE — ${betAmount || '0'} SOL`}
+              : `🎯 BUY TICKET — ${betAmount || '0'} SOL`}
           </button>
 
-          {/* Error / success */}
           {error && (
-            <div
-              style={{
-                marginTop: '10px',
-                padding: '8px 12px',
-                background: 'rgba(252,92,101,0.1)',
-                border: '1px solid rgba(252,92,101,0.3)',
-                borderRadius: '6px',
-                fontSize: '12px',
-                color: '#FC5C65',
-              }}
-            >
+            <div style={{ marginTop: '10px', padding: '9px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', fontSize: '12px', color: '#f87171' }}>
               {error}
             </div>
           )}
           {txSig && (
-            <div
-              style={{
-                marginTop: '10px',
-                padding: '8px 12px',
-                background: 'rgba(38,222,129,0.08)',
-                border: '1px solid rgba(38,222,129,0.2)',
-                borderRadius: '6px',
-                fontSize: '11px',
-                color: '#26DE81',
-              }}
-            >
+            <div style={{ marginTop: '10px', padding: '9px 12px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', fontSize: '11px', color: '#10b981' }}>
               ✓ Bet placed!{' '}
-              <a
-                href={`https://explorer.solana.com/tx/${txSig}?cluster=devnet`}
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: '#26DE81', textDecoration: 'underline' }}
-              >
-                View tx
+              <a href={`https://explorer.solana.com/tx/${txSig}`} target="_blank" rel="noreferrer" style={{ color: '#10b981', textDecoration: 'underline' }}>
+                View tx ↗
               </a>
             </div>
           )}
 
-          {/* Info */}
-          <div
-            style={{
-              marginTop: '14px',
-              fontSize: '10px',
-              color: 'var(--text-muted)',
-              lineHeight: 1.5,
-            }}
-          >
-            5% house fee on winnings · Min bet 0.01 SOL · Network: Devnet
+          <div style={{ marginTop: '12px', fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.6, textAlign: 'center' }}>
+            5% house fee · Min 0.01 SOL · Mainnet
           </div>
         </>
       )}
