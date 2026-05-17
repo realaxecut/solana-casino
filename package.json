@@ -13,6 +13,7 @@
     "@solana/wallet-adapter-react": "^0.15.39",
     "@solana/wallet-adapter-react-ui": "^0.9.39",
     "@solana/web3.js": "^1.95.3",
+    "better-sqlite3": "^12.10.0",
     "bs58": "^5.0.0",
     "dotenv": "^17.4.2",
     "framer-motion": "^11.2.10",

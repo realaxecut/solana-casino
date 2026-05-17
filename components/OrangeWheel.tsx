@@ -138,15 +138,26 @@ export default function OrangeWheel({
         }}
       >
         {/* Outer glow rings */}
-        <circle cx={cx} cy={cy} r={r + 8} fill="none" stroke="rgba(255,107,0,0.15)" strokeWidth="4" />
-        <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="rgba(255,107,0,0.08)" strokeWidth="3" />
+        <defs>
+          <radialGradient id="orangeFlesh" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#ffb347" />
+            <stop offset="60%" stopColor="#ff8c00" />
+            <stop offset="100%" stopColor="#c45c00" />
+          </radialGradient>
+          <radialGradient id="orangePeel" cx="50%" cy="50%" r="50%">
+            <stop offset="85%" stopColor="transparent" />
+            <stop offset="100%" stopColor="rgba(180,80,0,0.6)" />
+          </radialGradient>
+        </defs>
+        <circle cx={cx} cy={cy} r={r + 8} fill="none" stroke="rgba(200,90,0,0.4)" strokeWidth="6" />
+        <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="rgba(255,140,0,0.2)" strokeWidth="3" />
 
         {/* Main background */}
-        <circle cx={cx} cy={cy} r={r} fill="#1a0800" />
+        <circle cx={cx} cy={cy} r={r} fill="#c45c00" />
 
         {isEmpty ? (
           <>
-            <circle cx={cx} cy={cy} r={r} fill="#ff6b00" opacity="0.15" />
+            <circle cx={cx} cy={cy} r={r} fill="url(#orangeFlesh)" opacity="0.95" />
             {[0, 60, 120, 180, 240, 300].map((angle) => {
               const pt = polarToCartesian(cx, cy, r, angle);
               return (
@@ -171,7 +182,7 @@ export default function OrangeWheel({
                   <path
                     d={describeArc(cx, cy, r, seg.startAngle, seg.endAngle)}
                     fill={seg.color}
-                    stroke="#0a0500"
+                    stroke="#7a2e00"
                     strokeWidth="2"
                     opacity={isWinner ? 1 : isHovered ? 0.9 : 0.85}
                     style={{
@@ -200,7 +211,7 @@ export default function OrangeWheel({
               const pt = polarToCartesian(cx, cy, r, seg.startAngle);
               return (
                 <line key={`line-${seg.wallet}`} x1={cx} y1={cy} x2={pt.x} y2={pt.y}
-                  stroke="#0a0500" strokeWidth="2" />
+                  stroke="#7a2e00" strokeWidth="2" />
               );
             })}
           </>
@@ -208,17 +219,22 @@ export default function OrangeWheel({
 
         {/* Orange peel texture */}
         <circle cx={cx} cy={cy} r={r} fill="none"
-          stroke="rgba(255,140,0,0.1)" strokeWidth="1" strokeDasharray="4 8" />
+          stroke="rgba(150,60,0,0.4)" strokeWidth="1" strokeDasharray="4 8" />
+        <circle cx={cx} cy={cy} r={r - 6} fill="none"
+          stroke="rgba(255,160,0,0.08)" strokeWidth="1" strokeDasharray="3 12" />
 
-        {/* Inner hub */}
-        <circle cx={cx} cy={cy} r={innerR} fill="#0a0400" />
-        <circle cx={cx} cy={cy} r={innerR - 2} fill="#110600" />
+        {/* Inner hub — orange navel */}
+        <circle cx={cx} cy={cy} r={innerR} fill="#b35000" />
+        <circle cx={cx} cy={cy} r={innerR - 3} fill="#e06000" />
+        <circle cx={cx} cy={cy} r={innerR - 8} fill="#ffaa33" />
         <circle cx={cx} cy={cy} r={innerR - 4} fill="none"
-          stroke="rgba(255,107,0,0.4)" strokeWidth="2" />
-        <circle cx={cx} cy={cy} r={6} fill="rgba(255,107,0,0.6)" />
+          stroke="rgba(180,70,0,0.8)" strokeWidth="2" />
+        <circle cx={cx} cy={cy} r={8} fill="#c45c00" />
+        <circle cx={cx} cy={cy} r={4} fill="#ff9900" />
 
-        {/* Outer ring */}
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,107,0,0.4)" strokeWidth="2" />
+        {/* Outer ring — peel */}
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#b35000" strokeWidth="4" />
+        <circle cx={cx} cy={cy} r={r + 1} fill="none" stroke="rgba(255,160,0,0.3)" strokeWidth="2" />
 
         {/* Tick marks */}
         {Array.from({ length: 24 }).map((_, i) => {
@@ -227,7 +243,7 @@ export default function OrangeWheel({
           const inner2 = polarToCartesian(cx, cy, r - (i % 4 === 0 ? 10 : 5), angle);
           return (
             <line key={`tick-${i}`} x1={outer.x} y1={outer.y} x2={inner2.x} y2={inner2.y}
-              stroke="rgba(255,140,0,0.5)" strokeWidth={i % 4 === 0 ? 2 : 1} />
+              stroke="rgba(160,70,0,0.7)" strokeWidth={i % 4 === 0 ? 2 : 1} />
           );
         })}
       </svg>

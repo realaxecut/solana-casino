@@ -17,6 +17,11 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   const [available, setAvailable] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [avatarMsg, setAvatarMsg] = useState('');
+  const [levelInfo, setLevelInfo] = useState<any>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -108,6 +113,35 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     socket.emit('change_username', { wallet, newName: trimmed });
   };
 
+  useEffect(() => {
+    if (!socket) return;
+    const onResult = (res: { success: boolean; error?: string }) => {
+      setAvatarSaving(false);
+      setAvatarMsg(res.success ? '✓ Avatar saved!' : res.error || 'Failed');
+      setTimeout(() => setAvatarMsg(''), 3000);
+    };
+    const onProfile = (user: any) => { if (user.level) setLevelInfo(user.level); };
+    socket.on('profile_data', onProfile);
+    socket.emit('get_profile', { wallet });
+    socket.on('avatar_result', onResult);
+    return () => { socket.off('avatar_result', onResult); };
+  }, [socket]);
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2_000_000) { setAvatarMsg('Image must be under 2MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setAvatar(dataUrl);
+      setAvatarSaving(true);
+      setAvatarMsg('');
+      socket?.emit('set_avatar', { wallet, avatarDataUrl: dataUrl });
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSave(); };
   const shortWallet = wallet.slice(0, 6) + '...' + wallet.slice(-6);
   const trimmed = newName.trim();
@@ -164,6 +198,73 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
               {shortWallet}
             </div>
           </div>
+
+          {/* Avatar section */}
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '14px' }}>
+            Profile Picture
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+              background: avatar ? 'transparent' : 'rgba(255,107,0,0.15)',
+              border: '2px solid rgba(255,107,0,0.3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '28px', cursor: 'pointer',
+            }} onClick={() => fileRef.current?.click()}>
+              {avatar
+                ? <img src={avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : '🍓'}
+            </div>
+            <div style={{ flex: 1 }}>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={avatarSaving}
+                style={{
+                  padding: '8px 16px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                  background: 'rgba(255,107,0,0.1)', border: '1px solid rgba(255,107,0,0.3)',
+                  color: 'var(--orange-soft)', fontFamily: 'var(--font-display)', fontWeight: 700,
+                }}
+              >{avatarSaving ? 'Saving...' : 'Upload Image'}</button>
+              <div style={{ fontSize: '10px', color: avatarMsg.startsWith('✓') ? '#10b981' : avatarMsg ? '#f87171' : 'var(--text-muted)', marginTop: '6px' }}>
+                {avatarMsg || 'JPG, PNG, GIF · Max 2MB'}
+              </div>
+            </div>
+          </div>
+
+          {/* Level section */}
+          {levelInfo && (
+            <div style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '22px' }}>{levelInfo.emoji}</span>
+                  <div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+                      Level {levelInfo.level} — {levelInfo.name}
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {levelInfo.totalSol.toFixed(3)} SOL wagered
+                    </div>
+                  </div>
+                </div>
+                {levelInfo.nextTier && (
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                    Next: {levelInfo.nextTier.emoji}<br />{levelInfo.nextTier.name}
+                  </div>
+                )}
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '6px', height: '6px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${levelInfo.progress}%`, background: 'linear-gradient(90deg,#cc5500,#ff8c00)', borderRadius: '6px', transition: 'width 0.5s ease' }} />
+              </div>
+              {levelInfo.nextTier && (
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', textAlign: 'right' }}>
+                  {levelInfo.nextTier.minSol - levelInfo.totalSol > 0
+                    ? `${(levelInfo.nextTier.minSol - levelInfo.totalSol).toFixed(3)} SOL to next level`
+                    : 'Almost there!'}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Username section */}
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '14px' }}>

@@ -1,12 +1,24 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 
+interface LevelInfo {
+  level: number;
+  name: string;
+  emoji: string;
+  progress: number;
+  nextTier: { name: string; minSol: number } | null;
+  totalSol: number;
+}
+
 interface ChatMessage {
   id: string;
   wallet: string;
   displayName: string;
   message: string;
   timestamp: number;
+  isMod?: boolean;
+  avatar?: string | null;
+  level?: LevelInfo | null;
 }
 
 interface ChatProps {
@@ -23,14 +35,20 @@ const COLORS = [
 
 function getColor(wallet: string): string {
   let hash = 0;
-  for (let i = 0; i < wallet.length; i++) {
-    hash = wallet.charCodeAt(i) + ((hash << 5) - hash);
-  }
+  for (let i = 0; i < wallet.length; i++) hash = wallet.charCodeAt(i) + ((hash << 5) - hash);
   return COLORS[Math.abs(hash) % COLORS.length];
 }
 
-function shortenWallet(wallet: string): string {
-  return wallet.slice(0, 4) + '…' + wallet.slice(-4);
+function shortenWallet(w: string) { return w.slice(0, 4) + '…' + w.slice(-4); }
+
+function getLevelBg(level: number): string {
+  if (level >= 100) return 'linear-gradient(135deg, #b8860b, #ffd700)';
+  if (level >= 90)  return 'linear-gradient(135deg, #6a0dad, #9b30ff)';
+  if (level >= 70)  return 'linear-gradient(135deg, #1a6b3a, #26de81)';
+  if (level >= 50)  return 'linear-gradient(135deg, #1a4d8c, #45aaff)';
+  if (level >= 30)  return 'linear-gradient(135deg, #7a3500, #ff6b00)';
+  if (level >= 10)  return 'linear-gradient(135deg, #5a2d00, #a05020)';
+  return 'linear-gradient(135deg, #2a2a2a, #444)';
 }
 
 export default function Chat({ socket, currentWallet, currentDisplayName, isConnected }: ChatProps) {
@@ -38,45 +56,57 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
   const [input, setInput] = useState('');
   const [cooldown, setCooldown] = useState(false);
   const [cooldownSecs, setCooldownSecs] = useState(0);
+  const [avatarCache, setAvatarCache] = useState<Record<string, string | null>>({});
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Subscribe to socket chat events
   useEffect(() => {
     if (!socket) return;
-
     const onHistory = (history: ChatMessage[]) => {
       setMessages(history);
+      const cache: Record<string, string | null> = {};
+      history.forEach(m => { if (m.avatar !== undefined) cache[m.wallet] = m.avatar; });
+      setAvatarCache(prev => ({ ...prev, ...cache }));
     };
-
     const onMessage = (msg: ChatMessage) => {
+      if (msg.avatar !== undefined) setAvatarCache(prev => ({ ...prev, [msg.wallet]: msg.avatar ?? null }));
       setMessages(prev => {
-        // Deduplicate: replace optimistic message if IDs overlap, otherwise append
-        const withoutOptimistic = prev.filter(m => {
-          // Remove any optimistic local message with same wallet+message+recent timestamp
+        const filtered = prev.filter(m => {
           if (m.id.startsWith('local-') && m.wallet === msg.wallet && m.message === msg.message) return false;
           if (m.id === msg.id) return false;
           return true;
         });
-        return [...withoutOptimistic.slice(-199), msg];
+        return [...filtered.slice(-199), msg];
       });
     };
-
+    const onAvatarUpdated = ({ wallet, avatar }: { wallet: string; avatar: string | null }) => {
+      setAvatarCache(prev => ({ ...prev, [wallet]: avatar }));
+    };
+    const onCooldown = ({ msLeft }: { msLeft: number }) => {
+      const secs = Math.ceil(msLeft / 1000);
+      setCooldown(true); setCooldownSecs(secs);
+      let s = secs;
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
+      cooldownRef.current = setInterval(() => {
+        s -= 1; setCooldownSecs(s);
+        if (s <= 0) { clearInterval(cooldownRef.current!); setCooldown(false); setCooldownSecs(0); }
+      }, 1000);
+    };
     socket.on('chat_history', onHistory);
     socket.on('chat_message', onMessage);
+    socket.on('avatar_updated', onAvatarUpdated);
+    socket.on('chat_cooldown', onCooldown);
     socket.emit('get_chat_history');
-
     return () => {
       socket.off('chat_history', onHistory);
       socket.off('chat_message', onMessage);
+      socket.off('avatar_updated', onAvatarUpdated);
+      socket.off('chat_cooldown', onCooldown);
     };
   }, [socket]);
 
-  // Re-request history when reconnecting
   useEffect(() => {
-    if (isConnected && socket) {
-      socket.emit('get_chat_history');
-    }
+    if (isConnected && socket) socket.emit('get_chat_history');
   }, [isConnected, socket]);
 
   useEffect(() => {
@@ -85,63 +115,36 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
 
   const sendMessage = useCallback(() => {
     const trimmed = input.trim();
-    if (!trimmed || !currentWallet || !socket) return;
-
+    if (!trimmed || !currentWallet || !socket || cooldown) return;
     const displayName = currentDisplayName || shortenWallet(currentWallet);
-
-    // Optimistic message shown immediately
     const optimisticMsg: ChatMessage = {
       id: `local-${Date.now()}-${Math.random()}`,
-      wallet: currentWallet,
-      displayName,
-      message: trimmed,
-      timestamp: Date.now(),
+      wallet: currentWallet, displayName, message: trimmed, timestamp: Date.now(),
     };
     setMessages(prev => [...prev.slice(-199), optimisticMsg]);
     setInput('');
-
-    // Start 4s cooldown
-    setCooldown(true);
-    setCooldownSecs(4);
-    let secs = 4;
+    setCooldown(true); setCooldownSecs(3);
+    let secs = 3;
     if (cooldownRef.current) clearInterval(cooldownRef.current);
     cooldownRef.current = setInterval(() => {
-      secs -= 1;
-      setCooldownSecs(secs);
-      if (secs <= 0) {
-        clearInterval(cooldownRef.current!);
-        setCooldown(false);
-        setCooldownSecs(0);
-      }
+      secs -= 1; setCooldownSecs(secs);
+      if (secs <= 0) { clearInterval(cooldownRef.current!); setCooldown(false); setCooldownSecs(0); }
     }, 1000);
-
-    // Emit to server — socket.io will buffer and retry if briefly disconnected
-    socket.emit('send_chat', {
-      wallet: currentWallet,
-      displayName,
-      message: trimmed,
-    });
-  }, [input, currentWallet, currentDisplayName, socket]);
+    socket.emit('send_chat', { wallet: currentWallet, displayName, message: trimmed });
+  }, [input, currentWallet, currentDisplayName, socket, cooldown]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   const formatTime = (ts: number) =>
     new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const canChat = !!currentWallet && !!socket;
-  const placeholder = !currentWallet
-    ? 'Connect wallet to chat'
-    : !socket
-    ? 'Connecting...'
-    : cooldown
-    ? `Wait ${cooldownSecs}s...`
-    : currentDisplayName
-    ? `Chat as ${currentDisplayName}...`
+  const placeholder = !currentWallet ? 'Connect wallet to chat'
+    : !socket ? 'Connecting...'
+    : cooldown ? `Wait ${cooldownSecs}s...`
+    : currentDisplayName ? `Message as ${currentDisplayName}...`
     : 'Say something...';
 
   return (
@@ -149,44 +152,23 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
 
       {/* Header */}
       <div style={{
-        padding: '14px 16px',
-        borderBottom: '1px solid var(--border-color)',
+        padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
         display: 'flex', alignItems: 'center', gap: '8px',
-        background: 'rgba(139,92,246,0.04)',
-        flexShrink: 0,
+        background: 'rgba(255,255,255,0.02)', flexShrink: 0,
       }}>
-        <div style={{
-          width: 7, height: 7, borderRadius: '50%',
-          background: isConnected ? '#10b981' : '#ef4444',
-          boxShadow: isConnected ? '0 0 6px #10b981' : 'none',
-          flexShrink: 0,
-        }} />
-        <span style={{
-          fontFamily: 'var(--font-display)', fontWeight: 700,
-          fontSize: '12px', color: 'var(--text-secondary)', letterSpacing: '0.1em',
-        }}>LIVE CHAT</span>
-        {!isConnected && (
-          <span style={{ fontSize: '10px', color: '#ef4444', marginLeft: '2px' }}>reconnecting…</span>
-        )}
-        <span style={{
-          marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)',
-          background: 'rgba(139,92,246,0.1)', padding: '2px 7px',
-          borderRadius: '20px', border: '1px solid rgba(139,92,246,0.15)',
-        }}>
-          {messages.length}
-        </span>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: isConnected ? '#10b981' : '#ef4444', boxShadow: isConnected ? '0 0 6px #10b981' : 'none', flexShrink: 0 }} />
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>Live Chat</span>
+        {!isConnected && <span style={{ fontSize: '10px', color: '#ef4444' }}>reconnecting…</span>}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>{messages.length}</span>
+        </div>
       </div>
 
       {/* Messages */}
-      <div style={{
-        flex: 1, overflowY: 'auto', padding: '10px 12px',
-        display: 'flex', flexDirection: 'column', gap: '6px',
-      }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0', display: 'flex', flexDirection: 'column' }}>
         {messages.length === 0 && (
-          <div style={{
-            textAlign: 'center', color: 'var(--text-muted)',
-            fontSize: '12px', marginTop: '48px', lineHeight: 1.8,
-          }}>
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', marginTop: '48px', lineHeight: 1.8 }}>
             <div style={{ fontSize: '28px', marginBottom: '8px' }}>💬</div>
             No messages yet.<br />Be the first to chat!
           </div>
@@ -196,21 +178,73 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
           const color = getColor(msg.wallet);
           const name = msg.displayName || shortenWallet(msg.wallet);
           const isOptimistic = msg.id.startsWith('local-');
+          const avatar = avatarCache[msg.wallet];
+          const lvl = msg.level;
           return (
-            <div key={msg.id} className="animate-slide-in-up"
-              style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: isOwn ? 'flex-end' : 'flex-start', opacity: isOptimistic ? 0.7 : 1 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexDirection: isOwn ? 'row-reverse' : 'row' }}>
-                <span style={{ fontSize: '11px', fontWeight: 700, color, fontFamily: 'var(--font-display)' }}>{name}</span>
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{formatTime(msg.timestamp)}</span>
+            <div key={msg.id}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: '10px',
+                padding: '8px 14px',
+                background: isOwn ? 'rgba(255,140,0,0.04)' : 'transparent',
+                opacity: isOptimistic ? 0.6 : 1,
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+              onMouseLeave={e => (e.currentTarget.style.background = isOwn ? 'rgba(255,140,0,0.04)' : 'transparent')}
+            >
+              {/* Level badge */}
+              <div
+                title={lvl ? `Level ${lvl.level} — ${lvl.name}` : 'Level 0 — Seedling'}
+                style={{
+                  flexShrink: 0, width: 38, height: 38, borderRadius: '8px',
+                  background: getLevelBg(lvl?.level ?? 0),
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  cursor: 'default', gap: '1px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                }}
+              >
+                <span style={{ fontSize: '15px', lineHeight: 1 }}>{lvl?.emoji ?? '🌱'}</span>
+                <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.9)', fontFamily: 'var(--font-display)', fontWeight: 800, lineHeight: 1 }}>
+                  {lvl?.level ?? 0}
+                </span>
               </div>
-              <div style={{
-                background: isOwn ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.04)',
-                border: `1px solid ${isOwn ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                borderRadius: isOwn ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                padding: '7px 11px', fontSize: '12px', color: 'var(--text-primary)',
-                maxWidth: '95%', wordBreak: 'break-word', lineHeight: 1.5,
-              }}>
-                {msg.message}
+
+              {/* Right side */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Name row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px' }}>
+                  {/* Avatar bubble */}
+                  <div style={{
+                    width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
+                    overflow: 'hidden', border: `1px solid ${color}`,
+                    background: avatar ? 'transparent' : color,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '8px', color: '#fff', fontWeight: 700,
+                  }}>
+                    {avatar ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : name.charAt(0).toUpperCase()}
+                  </div>
+
+                  <span style={{ fontSize: '13px', fontWeight: 700, color, fontFamily: 'var(--font-display)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>
+                    {name}
+                  </span>
+
+                  {msg.isMod && (
+                    <span title="Moderator" style={{ width: 13, height: 13, borderRadius: '50%', background: '#a78bfa', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', flexShrink: 0, color: '#fff' }}>✓</span>
+                  )}
+                  {msg.isMod && (
+                    <span style={{ fontSize: '8px', background: 'rgba(139,92,246,0.25)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '4px', padding: '1px 5px', fontFamily: 'var(--font-display)', fontWeight: 700, letterSpacing: '0.04em', flexShrink: 0 }}>MOD</span>
+                  )}
+
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: 'auto', flexShrink: 0 }}>
+                    {formatTime(msg.timestamp)}
+                  </span>
+                </div>
+
+                {/* Message text */}
+                <div style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                  {msg.message}
+                </div>
               </div>
             </div>
           );
@@ -219,31 +253,40 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
       </div>
 
       {/* Input */}
-      <div style={{
-        padding: '10px 12px', borderTop: '1px solid var(--border-color)',
-        display: 'flex', gap: '8px', flexShrink: 0,
-      }}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value.slice(0, 280))}
-          onKeyDown={handleKey}
-          placeholder={placeholder}
-          disabled={!canChat}
-          style={{
-            flex: 1, fontSize: '12px', padding: '8px 10px', borderRadius: '8px',
-            opacity: canChat ? 1 : 0.5,
-          }}
-          maxLength={280}
-        />
-        <button
-          onClick={sendMessage}
-          disabled={!canChat || !input.trim() || cooldown}
-          className="btn-orange"
-          style={{ padding: '8px 13px', fontSize: '14px', borderRadius: '8px', flexShrink: 0 }}
-        >
-          {cooldown ? cooldownSecs : '›'}
-        </button>
+      <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.02)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value.slice(0, 280))}
+            onKeyDown={handleKey}
+            placeholder={placeholder}
+            disabled={!canChat}
+            style={{
+              flex: 1, fontSize: '12px', padding: '9px 12px', borderRadius: '10px',
+              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)', outline: 'none', opacity: canChat ? 1 : 0.5,
+            }}
+            maxLength={280}
+          />
+          <button
+            onClick={sendMessage}
+            disabled={!canChat || !input.trim() || cooldown}
+            style={{
+              padding: '9px 14px', fontSize: '14px', borderRadius: '10px', flexShrink: 0,
+              background: canChat && input.trim() && !cooldown ? 'linear-gradient(135deg,#cc5500,#ff8c00)' : 'rgba(255,255,255,0.06)',
+              border: 'none', color: '#fff', cursor: canChat && !cooldown ? 'pointer' : 'not-allowed',
+              fontWeight: 700, transition: 'all 0.15s',
+            }}
+          >
+            {cooldown ? cooldownSecs : '›'}
+          </button>
+        </div>
+        {!canChat && (
+          <div style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
+            Please connect wallet to chat
+          </div>
+        )}
       </div>
     </div>
   );

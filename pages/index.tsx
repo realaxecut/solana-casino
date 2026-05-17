@@ -410,8 +410,8 @@ export default function Home() {
             alignItems: 'center', overflow: 'hidden', minHeight: 0,
           }}>
 
-            {/* BET PANEL — always visible, pinned at top */}
-            <div style={{ width: '100%', padding: '14px 24px 0', flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+            {/* BET PANEL — static, stays at top */}
+            <div style={{ width: '100%', padding: '14px 24px 0', display: 'flex', justifyContent: 'center' }}>
               <div style={{
                 width: '100%', maxWidth: '540px',
                 background: 'var(--bg-card)',
@@ -578,8 +578,8 @@ export default function Home() {
                   LAST WINNER
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '8px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Won</span>
-                  <span style={{ color: 'var(--orange-soft)', fontWeight: 700 }}>◎ {(round.winnerShare / 1e9).toFixed(3)}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>Pot</span>
+                  <span style={{ color: 'var(--orange-soft)', fontWeight: 700 }}>◎ {(round.totalPot / 1e9).toFixed(3)}</span>
                 </div>
               </div>
             )}
@@ -602,12 +602,8 @@ export default function Home() {
                     <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>#{i + 1}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Won</span>
-                    <span style={{ color: 'var(--orange-soft)', fontWeight: 700 }}>◎ {(r.winnerShare / 1e9).toFixed(3)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '2px' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Pot</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>◎ {(r.totalPot / 1e9).toFixed(3)}</span>
+                    <span style={{ color: 'var(--orange-soft)', fontWeight: 700 }}>◎ {(r.totalPot / 1e9).toFixed(3)}</span>
                   </div>
                 </div>
               ))}
