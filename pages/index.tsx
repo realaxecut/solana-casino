@@ -68,6 +68,7 @@ export default function Home() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [recentRounds, setRecentRounds] = useState<RecentRound[]>([]);
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
   const [showSettings, setShowSettings] = useState(false);
   const [betAmount, setBetAmount] = useState('');
   const [betLoading, setBetLoading] = useState(false);
@@ -130,6 +131,9 @@ export default function Home() {
     });
     s.on('username_changed', ({ wallet: changedWallet, newName }: { wallet: string; newName: string }) => {
       if (changedWallet === publicKey?.toBase58()) setDisplayName(newName);
+    });
+    s.on('avatar_updated', ({ wallet: aw, avatar }: { wallet: string; avatar: string | null }) => {
+      setAvatarMap(prev => ({ ...prev, [aw]: avatar || '' }));
     });
     s.on('new_round', () => {
       setIsSpinning(false);
@@ -581,6 +585,7 @@ export default function Home() {
                     isIdleSpinning={isIdleSpinning}
                     winnerWallet={round?.winnerWallet || null}
                     size={360}
+                    avatarMap={avatarMap}
                   />
                 </div>
               </div>

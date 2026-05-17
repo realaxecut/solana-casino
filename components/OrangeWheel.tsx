@@ -15,6 +15,7 @@ interface OrangeWheelProps {
   isIdleSpinning?: boolean;
   winnerWallet: string | null;
   size?: number;
+  avatarMap?: Record<string, string>; // wallet -> avatar data URL
 }
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
@@ -39,6 +40,7 @@ export default function OrangeWheel({
   isIdleSpinning = false,
   winnerWallet,
   size = 380,
+  avatarMap = {},
 }: OrangeWheelProps) {
   const cx = size / 2;
   const cy = size / 2;
@@ -93,16 +95,7 @@ export default function OrangeWheel({
       const currentNormalized = ((startRot % 360) + 360) % 360;
       let delta = targetAngle - currentNormalized;
       if (delta < 0) delta += 360;
-      // Small random jitter within the winner segment (±30% of segment angle) for visual variety
-      if (winnerWallet && segments.length > 0) {
-        const winnerSeg = segments.find((s) => s.wallet === winnerWallet);
-        if (winnerSeg) {
-          const jitterRange = winnerSeg.angle * 0.3;
-          const jitter = (Math.random() - 0.5) * jitterRange;
-          delta += jitter;
-        }
-      }
-      const totalSpin = 1800 + delta; // 5 full rotations + exact landing
+      const totalSpin = 1800 + delta; // 5 full rotations + exact landing on winner's midpoint
 
       const startTime = Date.now();
       const duration = 5000;
@@ -285,17 +278,36 @@ export default function OrangeWheel({
       {hoveredWallet && (() => {
         const seg = segments.find((s) => s.wallet === hoveredWallet);
         if (!seg) return null;
+        const avatar = avatarMap[hoveredWallet] || null;
         return (
           <div className="absolute pointer-events-none" style={{
             bottom: 0, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(10,4,0,0.95)', border: `1px solid ${seg.color}`,
-            borderRadius: '8px', padding: '8px 14px', whiteSpace: 'nowrap', zIndex: 10,
+            borderRadius: '10px', padding: '10px 14px', whiteSpace: 'nowrap', zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: '10px',
           }}>
-            <div style={{ color: seg.color, fontWeight: 700, fontSize: '13px', fontFamily: 'Syne' }}>
-              {seg.displayName}
-            </div>
-            <div style={{ color: '#c8a070', fontSize: '11px' }}>
-              {lamportsToSol(seg.betAmount)} SOL · {seg.percentage.toFixed(2)}%
+            {avatar ? (
+              <img src={avatar} alt="" style={{
+                width: 36, height: 36, borderRadius: '50%',
+                border: `2px solid ${seg.color}`, objectFit: 'cover', flexShrink: 0,
+              }} />
+            ) : (
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%',
+                border: `2px solid ${seg.color}`, background: seg.color + '33',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', fontWeight: 700, color: seg.color, flexShrink: 0,
+              }}>
+                {seg.displayName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div style={{ color: seg.color, fontWeight: 700, fontSize: '13px', fontFamily: 'Syne' }}>
+                {seg.displayName}
+              </div>
+              <div style={{ color: '#c8a070', fontSize: '11px' }}>
+                {lamportsToSol(seg.betAmount)} SOL · {seg.percentage.toFixed(2)}%
+              </div>
             </div>
           </div>
         );

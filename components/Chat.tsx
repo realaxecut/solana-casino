@@ -99,7 +99,7 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
     };
     const onPlayerCount = (count: number) => setPlayerCount(count);
     const onMutedUser = ({ targetWallet }: { targetWallet: string }) => {
-      setMutedWallets(prev => new Set([...prev, targetWallet]));
+      setMutedWallets(prev => new Set(Array.from(prev).concat(targetWallet)));
       setMessages(prev => prev.filter(m => m.wallet !== targetWallet));
     };
     const onMessageDeleted = ({ messageId }: { messageId: string }) => {
