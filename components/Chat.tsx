@@ -37,35 +37,30 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  // Always hold latest values without triggering re-subscription
-  const socketRef = useRef<Socket | null>(null);
-  const walletRef = useRef<string | null>(null);
-  const displayNameRef = useRef<string>('');
 
-  socketRef.current = socket;
-  walletRef.current = currentWallet;
-  displayNameRef.current = currentDisplayName;
-
-  // Subscribe to socket events — re-run whenever socket instance changes
+  // Subscribe to socket chat events
   useEffect(() => {
     if (!socket) return;
 
     const onHistory = (history: ChatMessage[]) => {
       setMessages(history);
     };
+
     const onMessage = (msg: ChatMessage) => {
       setMessages(prev => {
-        // Deduplicate by id in case of optimistic echo
-        if (prev.some(m => m.id === msg.id)) return prev;
-        return [...prev.slice(-199), msg];
+        // Deduplicate: replace optimistic message if IDs overlap, otherwise append
+        const withoutOptimistic = prev.filter(m => {
+          // Remove any optimistic local message with same wallet+message+recent timestamp
+          if (m.id.startsWith('local-') && m.wallet === msg.wallet && m.message === msg.message) return false;
+          if (m.id === msg.id) return false;
+          return true;
+        });
+        return [...withoutOptimistic.slice(-199), msg];
       });
     };
 
     socket.on('chat_history', onHistory);
     socket.on('chat_message', onMessage);
-
-    // Request history on (re)connect
     socket.emit('get_chat_history');
 
     return () => {
@@ -74,36 +69,41 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
     };
   }, [socket]);
 
+  // Re-request history when reconnecting
+  useEffect(() => {
+    if (isConnected && socket) {
+      socket.emit('get_chat_history');
+    }
+  }, [isConnected, socket]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const sendMessage = useCallback(() => {
-    const s = socketRef.current;
-    const w = walletRef.current;
     const trimmed = input.trim();
-    if (!trimmed || !w) return;
+    if (!trimmed || !currentWallet || !socket) return;
 
+    const displayName = currentDisplayName || shortenWallet(currentWallet);
+
+    // Optimistic message shown immediately
     const optimisticMsg: ChatMessage = {
       id: `local-${Date.now()}-${Math.random()}`,
-      wallet: w,
-      displayName: displayNameRef.current || shortenWallet(w),
+      wallet: currentWallet,
+      displayName,
       message: trimmed,
       timestamp: Date.now(),
     };
-
-    // Show message immediately (optimistic)
     setMessages(prev => [...prev.slice(-199), optimisticMsg]);
     setInput('');
 
-    if (s) {
-      s.emit('send_chat', {
-        wallet: w,
-        displayName: displayNameRef.current || shortenWallet(w),
-        message: trimmed,
-      });
-    }
-  }, [input]);
+    // Emit to server — socket.io will buffer and retry if briefly disconnected
+    socket.emit('send_chat', {
+      wallet: currentWallet,
+      displayName,
+      message: trimmed,
+    });
+  }, [input, currentWallet, currentDisplayName, socket]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -114,6 +114,15 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
 
   const formatTime = (ts: number) =>
     new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const canChat = !!currentWallet && !!socket;
+  const placeholder = !currentWallet
+    ? 'Connect wallet to chat'
+    : !socket
+    ? 'Connecting...'
+    : currentDisplayName
+    ? `Chat as ${currentDisplayName}...`
+    : 'Say something...';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--chat-bg)' }}>
@@ -136,6 +145,9 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
           fontFamily: 'var(--font-display)', fontWeight: 700,
           fontSize: '12px', color: 'var(--text-secondary)', letterSpacing: '0.1em',
         }}>LIVE CHAT</span>
+        {!isConnected && (
+          <span style={{ fontSize: '10px', color: '#ef4444', marginLeft: '2px' }}>reconnecting…</span>
+        )}
         <span style={{
           marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)',
           background: 'rgba(139,92,246,0.1)', padding: '2px 7px',
@@ -163,9 +175,10 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
           const isOwn = msg.wallet === currentWallet;
           const color = getColor(msg.wallet);
           const name = msg.displayName || shortenWallet(msg.wallet);
+          const isOptimistic = msg.id.startsWith('local-');
           return (
             <div key={msg.id} className="animate-slide-in-up"
-              style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+              style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: isOwn ? 'flex-end' : 'flex-start', opacity: isOptimistic ? 0.7 : 1 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexDirection: isOwn ? 'row-reverse' : 'row' }}>
                 <span style={{ fontSize: '11px', fontWeight: 700, color, fontFamily: 'var(--font-display)' }}>{name}</span>
                 <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{formatTime(msg.timestamp)}</span>
@@ -191,23 +204,21 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
         display: 'flex', gap: '8px', flexShrink: 0,
       }}>
         <input
-          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value.slice(0, 280))}
           onKeyDown={handleKey}
-          placeholder={
-            !currentWallet ? 'Connect wallet to chat'
-            : currentDisplayName ? `Chat as ${currentDisplayName}...`
-            : 'Say something...'
-          }
-          disabled={!currentWallet}
-          style={{ flex: 1, fontSize: '12px', padding: '8px 10px', borderRadius: '8px' }}
+          placeholder={placeholder}
+          disabled={!canChat}
+          style={{
+            flex: 1, fontSize: '12px', padding: '8px 10px', borderRadius: '8px',
+            opacity: canChat ? 1 : 0.5,
+          }}
           maxLength={280}
         />
         <button
           onClick={sendMessage}
-          disabled={!currentWallet || !input.trim()}
+          disabled={!canChat || !input.trim()}
           className="btn-orange"
           style={{ padding: '8px 13px', fontSize: '14px', borderRadius: '8px', flexShrink: 0 }}
         >

@@ -18,16 +18,18 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   const [saving, setSaving] = useState(false);
   const [visible, setVisible] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 40);
     return () => clearTimeout(t);
   }, []);
 
-  // Listen for check result
+  // Listen for check result from server
   useEffect(() => {
     if (!socket) return;
     const onCheckResult = (res: { available: boolean; error: string | null }) => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       setChecking(false);
       setAvailable(res.available);
       if (!res.available && res.error) setError(res.error);
@@ -55,20 +57,44 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     return () => { socket.off('username_change_result', onChangeResult); };
   }, [socket, wallet, onUsernameChanged]);
 
-  // Debounced availability check
+  // Debounced availability check — with 3s timeout fallback
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
     const trimmed = newName.trim();
     setSuccess('');
     if (!trimmed || trimmed === currentDisplayName || trimmed.length < 2) {
       setAvailable(null); setChecking(false); return;
     }
+
+    // If socket not connected yet, assume available
+    if (!socket || !socket.connected) {
+      setAvailable(true); setChecking(false); return;
+    }
+
     setChecking(true); setAvailable(null);
+
+    // Safety timeout: if server doesn't reply in 3s, assume available
+    timeoutRef.current = setTimeout(() => {
+      setChecking(false);
+      setAvailable(true);
+    }, 3000);
+
     debounceRef.current = setTimeout(() => {
-      if (!socket) { setChecking(false); return; }
+      if (!socket || !socket.connected) {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        setChecking(false);
+        setAvailable(true);
+        return;
+      }
       socket.emit('check_username', { name: trimmed, wallet });
     }, 400);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
   }, [newName, socket, wallet, currentDisplayName]);
 
   const handleSave = () => {
@@ -76,7 +102,7 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     if (!trimmed || trimmed.length < 2) { setError('Username must be at least 2 characters'); return; }
     if (trimmed === currentDisplayName) { setError('That is already your username'); return; }
     if (available === false) { setError('Username already taken'); return; }
-    if (!socket) return;
+    if (!socket) { setError('Not connected to server'); return; }
     setSaving(true);
     setError('');
     socket.emit('change_username', { wallet, newName: trimmed });

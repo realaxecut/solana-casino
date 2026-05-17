@@ -1,64 +1,49 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Socket } from 'socket.io-client';
 
 interface UsernameModalProps {
   wallet: string;
-  socket: Socket | null;
+  socket: any; // kept for API compatibility but no longer used for checking
   onConfirm: (username: string) => void;
 }
 
-export default function UsernameModal({ wallet, socket, onConfirm }: UsernameModalProps) {
+export default function UsernameModal({ wallet, onConfirm }: UsernameModalProps) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [checking, setChecking] = useState(false);
-  const [available, setAvailable] = useState<boolean | null>(null);
   const [visible, setVisible] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 80);
     return () => clearTimeout(t);
   }, []);
 
-  // Listen for check result from server
-  useEffect(() => {
-    if (!socket) return;
-    const onResult = (res: { available: boolean; error: string | null }) => {
-      setChecking(false);
-      setAvailable(res.available);
-      if (!res.available && res.error) setError(res.error);
-      else setError('');
-    };
-    socket.on('username_check_result', onResult);
-    return () => { socket.off('username_check_result', onResult); };
-  }, [socket]);
-
-  // Debounced availability check
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const trimmed = name.trim();
-    if (!trimmed || trimmed.length < 2) { setAvailable(null); setChecking(false); return; }
-    setChecking(true);
-    setAvailable(null);
-    debounceRef.current = setTimeout(() => {
-      if (!socket) { setChecking(false); return; }
-      socket.emit('check_username', { name: trimmed, wallet });
-    }, 400);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [name, socket, wallet]);
+  const validate = (trimmed: string): string | null => {
+    if (!trimmed) return 'Please enter a username';
+    if (trimmed.length < 2) return 'Username must be at least 2 characters';
+    if (trimmed.length > 20) return 'Username must be 20 characters or less';
+    if (!/^[a-zA-Z0-9_\-. ]+$/.test(trimmed)) return 'Only letters, numbers, spaces, _ - . allowed';
+    return null;
+  };
 
   const handleConfirm = () => {
     const trimmed = name.trim();
-    if (!trimmed) { setError('Please enter a username'); return; }
-    if (trimmed.length < 2) { setError('Username must be at least 2 characters'); return; }
-    if (available === false) { setError('Username already taken'); return; }
+    const validationError = validate(trimmed);
+    if (validationError) { setError(validationError); return; }
     onConfirm(trimmed);
   };
 
-  const handleKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleConfirm(); };
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleConfirm();
+  };
+
   const shortWallet = wallet.slice(0, 4) + '…' + wallet.slice(-4);
-  const borderColor = error ? 'rgba(252,92,101,0.5)' : available ? 'rgba(16,185,129,0.6)' : 'rgba(255,107,0,0.3)';
-  const canSubmit = name.trim().length >= 2 && available !== false && !checking;
+  const trimmed = name.trim();
+  const localValid = trimmed.length >= 2 && !validate(trimmed);
+  const borderColor = error
+    ? 'rgba(252,92,101,0.5)'
+    : localValid
+    ? 'rgba(16,185,129,0.6)'
+    : 'rgba(255,107,0,0.3)';
+  const canSubmit = localValid;
 
   return (
     <div style={{
@@ -89,7 +74,7 @@ export default function UsernameModal({ wallet, socket, onConfirm }: UsernameMod
           <input
             type="text"
             value={name}
-            onChange={(e) => { setName(e.target.value.slice(0, 20)); setError(''); setAvailable(null); }}
+            onChange={(e) => { setName(e.target.value.slice(0, 20)); setError(''); }}
             onKeyDown={handleKey}
             placeholder="Enter username..."
             autoFocus
@@ -100,18 +85,25 @@ export default function UsernameModal({ wallet, socket, onConfirm }: UsernameMod
               color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 600,
               fontSize: '16px', padding: '14px 44px 14px 16px',
               textAlign: 'center', outline: 'none', boxSizing: 'border-box',
-              boxShadow: error ? '0 0 0 3px rgba(252,92,101,0.1)' : available ? '0 0 0 3px rgba(16,185,129,0.1)' : '0 0 0 3px rgba(255,107,0,0.08)',
               transition: 'all 0.2s',
             }}
           />
           <div style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' }}>
-            {checking ? '⏳' : available === true ? '✅' : available === false ? '❌' : ''}
+            {trimmed.length >= 2 ? (localValid ? '✅' : '❌') : ''}
           </div>
         </div>
 
-        {error && <div style={{ fontSize: '12px', color: '#FC5C65', marginBottom: '12px', textAlign: 'left', paddingLeft: '4px' }}>{error}</div>}
-        {!error && available === true && <div style={{ fontSize: '12px', color: '#10b981', marginBottom: '12px', textAlign: 'left', paddingLeft: '4px' }}>✓ Username available</div>}
-        {!error && available !== true && <div style={{ marginBottom: '12px', height: '18px' }} />}
+        {error && (
+          <div style={{ fontSize: '12px', color: '#FC5C65', marginBottom: '12px', textAlign: 'left', paddingLeft: '4px' }}>
+            {error}
+          </div>
+        )}
+        {!error && localValid && (
+          <div style={{ fontSize: '12px', color: '#10b981', marginBottom: '12px', textAlign: 'left', paddingLeft: '4px' }}>
+            ✓ Username looks good
+          </div>
+        )}
+        {!error && !localValid && <div style={{ marginBottom: '12px', height: '18px' }} />}
 
         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.25)', marginBottom: '20px', textAlign: 'right' }}>
           {name.length}/20
@@ -131,7 +123,7 @@ export default function UsernameModal({ wallet, socket, onConfirm }: UsernameMod
             transition: 'all 0.2s',
           }}
         >
-          {checking ? 'Checking...' : 'Enter Casino →'}
+          Enter Casino →
         </button>
 
         <div style={{ marginTop: '16px', fontSize: '10px', color: 'rgba(255,255,255,0.2)', lineHeight: 1.6 }}>
