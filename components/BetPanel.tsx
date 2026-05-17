@@ -46,8 +46,8 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
     }
 
     const solAmount = parseFloat(betAmount);
-    if (isNaN(solAmount) || solAmount < 0.01) {
-      setError('Minimum bet is 0.01 SOL');
+    if (isNaN(solAmount) || solAmount < 0.0001) {
+      setError('Minimum bet is 0.0001 SOL');
       return;
     }
     if (roundStatus === 'spinning' || roundStatus === 'ended') {
@@ -159,8 +159,8 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
               type="number"
               value={betAmount}
               onChange={(e) => setBetAmount(e.target.value)}
-              min="0.01"
-              step="0.01"
+              min="0.0001"
+              step="0.0001"
               style={{ width: '100%', fontSize: '16px', padding: '10px 14px', fontFamily: 'var(--font-display)', fontWeight: 700 }}
             />
           </div>
@@ -218,7 +218,7 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
           )}
 
           <div style={{ marginTop: '12px', fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.6, textAlign: 'center' }}>
-            5% house fee · Min 0.01 SOL · Mainnet
+            5% house fee · Min 0.0001 SOL · Mainnet
           </div>
         </>
       )}

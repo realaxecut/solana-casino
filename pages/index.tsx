@@ -513,7 +513,7 @@ export default function Home() {
                       type="number"
                       value={betAmount}
                       onChange={e => setBetAmount(e.target.value)}
-                      min="0.01" step="0.01"
+                      min="0.0001" step="0.0001"
                       placeholder="0.1"
                       style={{
                         flex: 1, background: 'transparent', border: 'none',

@@ -1,6 +1,15 @@
 import { Server as HTTPServer } from 'http';
 import { Server as IOServer, Socket } from 'socket.io';
 import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  LAMPORTS_PER_SOL,
+} from '@solana/web3.js';
+import bs58 from 'bs58';
+import {
   getCurrentRound,
   getOrCreateActiveRound,
   placeBet,
@@ -13,6 +22,54 @@ import {
   COUNTDOWN_SECONDS,
 } from './gameStore';
 
+const RPC_URL = process.env.SERVER_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://api.devnet.solana.com';
+let houseKeypair: Keypair | null = null;
+let solanaConnection: Connection | null = null;
+
+function initSolana() {
+  const privKey = process.env.HOUSE_WALLET_PRIVATE_KEY;
+  if (!privKey) {
+    console.warn('[payout] HOUSE_WALLET_PRIVATE_KEY not set — payouts disabled');
+    return;
+  }
+  try {
+    const decoded = bs58.decode(privKey);
+    houseKeypair = Keypair.fromSecretKey(decoded);
+    solanaConnection = new Connection(RPC_URL, 'confirmed');
+    console.log('[payout] House wallet loaded:', houseKeypair.publicKey.toBase58());
+  } catch (e: any) {
+    console.error('[payout] Failed to load house keypair:', e.message);
+  }
+}
+
+async function sendPayout(winnerWallet: string, lamports: number): Promise<string | null> {
+  if (!houseKeypair || !solanaConnection) {
+    console.warn('[payout] Skipping payout — not configured');
+    return null;
+  }
+  try {
+    const toPubkey = new PublicKey(winnerWallet);
+    const { blockhash, lastValidBlockHeight } = await solanaConnection.getLatestBlockhash('confirmed');
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: houseKeypair.publicKey,
+        toPubkey,
+        lamports,
+      })
+    );
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = houseKeypair.publicKey;
+    tx.sign(houseKeypair);
+    const sig = await solanaConnection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+    await solanaConnection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+    console.log(`[payout] Sent ${lamports / LAMPORTS_PER_SOL} SOL to ${winnerWallet} — tx: ${sig}`);
+    return sig;
+  } catch (e: any) {
+    console.error('[payout] Payout failed:', e.message);
+    return null;
+  }
+}
+
 let io: IOServer | null = null;
 let spinTimer: NodeJS.Timeout | null = null;
 let countdownTimer: NodeJS.Timeout | null = null;
@@ -23,6 +80,7 @@ export function getIO(): IOServer | null {
 
 export function initSocket(server: HTTPServer) {
   if (io) return io;
+  initSolana();
 
   io = new IOServer(server, {
     cors: {
@@ -103,14 +161,23 @@ function triggerSpin(roundId: string) {
   io!.emit('round_update', round);
   io!.emit('spin_started', { roundId });
 
-  // After 5s of spin animation, announce winner
-  spinTimer = setTimeout(() => {
+  // After 5s of spin animation, pay out winner and announce
+  spinTimer = setTimeout(async () => {
+    let payoutTx: string | null = null;
+    if (round.winnerWallet && round.winnerShare > 0) {
+      payoutTx = await sendPayout(round.winnerWallet, round.winnerShare);
+      if (!payoutTx) {
+        console.error('[payout] Payout failed for winner', round.winnerWallet, '— win was already recorded in spinRound');
+      }
+    }
+
     io!.emit('winner_announced', {
       roundId: round.id,
       winnerWallet: round.winnerWallet,
       winnerDisplayName: round.winnerDisplayName,
       winnerShare: round.winnerShare,
       totalPot: round.totalPot,
+      payoutTx,
     });
 
     // End round after 8s

@@ -47,7 +47,7 @@ let currentRoundId: string | null = null;
 
 const HOUSE_FEE = 0.05;
 export const COUNTDOWN_SECONDS = 60; // 60 second countdown
-const MIN_BET_LAMPORTS = 10_000_000;
+const MIN_BET_LAMPORTS = 100_000; // 0.0001 SOL
 
 const PLAYER_COLORS = [
   '#FF6B35', '#FF9F1C', '#FFBF69', '#F7B731', '#FD9644',
