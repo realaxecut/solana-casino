@@ -79,6 +79,7 @@ export default function Home() {
   const prevWalletRef = useRef<string | null>(null);
   const prevRoundIdRef = useRef<string | null>(null);
   const [liveTimeLeft, setLiveTimeLeft] = useState<number>(0);
+  const [lastAnimatedRoundId, setLastAnimatedRoundId] = useState<string | null>(null);
 
   useEffect(() => {
     const tick = () => {
@@ -118,19 +119,20 @@ export default function Home() {
       setIsSpinning(r.status === 'spinning');
     });
     s.on('spin_started', () => setIsSpinning(true));
-    s.on('recent_rounds', (rounds: RecentRound[]) => setRecentRounds(rounds));
+    s.on('recent_rounds', (rounds: RecentRound[]) => {
+      setRecentRounds(rounds);
+      if (rounds.length > 0) setLastAnimatedRoundId(rounds[0].id);
+    });
     s.on('winner_announced', (info: WinnerInfo) => {
       setWinnerInfo(info);
       setShowWinner(true);
       setIsSpinning(false);
-      // recentRounds are now updated server-side via 'recent_rounds' event after endRound
     });
     s.on('username_changed', ({ wallet: changedWallet, newName }: { wallet: string; newName: string }) => {
       if (changedWallet === publicKey?.toBase58()) setDisplayName(newName);
     });
     s.on('new_round', () => {
       setIsSpinning(false);
-      setWinnerInfo(null);
       setRoundDisplayId(prev => prev + 1);
       setPendingBet(prev => {
         if (prev) {
@@ -170,19 +172,67 @@ export default function Home() {
     if (status === 'spinning' || status === 'ended') { setBetError('Round is closed'); return; }
     setBetLoading(true);
     try {
-	    const balance = await connection.getBalance(publicKey);
+      // Check wallet is on the correct network
+      const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+      const MAINNET_GENESIS = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
+      const expectedNetwork = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'mainnet-beta';
+      const expectedGenesis = expectedNetwork === 'devnet' ? DEVNET_GENESIS : MAINNET_GENESIS;
+      const expectedName = expectedNetwork === 'devnet' ? 'Devnet' : 'Mainnet';
+      const genesis = await connection.getGenesisHash();
+      if (genesis !== expectedGenesis) {
+        const wrongName = genesis === DEVNET_GENESIS ? 'Devnet' : 'Mainnet';
+        setBetError(`❌ Your wallet is on ${wrongName} but this site uses ${expectedName}. Please switch networks in your wallet.`);
+        setBetLoading(false);
+        return;
+      }
+
+      const balance = await connection.getBalance(publicKey);
       const fee = 5000;
       const lamports = Math.floor(sol * LAMPORTS_PER_SOL);
       if (lamports + fee > balance) { setBetError('Insufficient balance to cover bet + network fee'); setBetLoading(false); return; }
-	    const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: new PublicKey(HOUSE_WALLET), lamports }));
-	    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-	    tx.recentBlockhash = blockhash;
-	    tx.feePayer = publicKey;
-	    const sig = await sendTransaction(tx, connection);
-	    const confirmation = await Promise.race([
-		    connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed'),
-		    new Promise((_, reject) => setTimeout(() => reject(new Error('Transaction timed out, please try again')), 10000))
-	    ]);
+
+      // Get a fresh blockhash right before sending — minimises expiry risk
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: new PublicKey(HOUSE_WALLET), lamports }));
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      // Send with preflight so obviously invalid txs fail fast
+      const sig = await sendTransaction(tx, connection, { skipPreflight: false, preflightCommitment: 'confirmed' });
+
+      // Poll for confirmation — more reliable than confirmTransaction on devnet
+      setBetError('⏳ Waiting for transaction to confirm...');
+      let confirmed = false;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const status = await connection.getSignatureStatus(sig, { searchTransactionHistory: false });
+        const conf = status?.value?.confirmationStatus;
+        const err = status?.value?.err;
+        if (err) {
+          setBetError('Transaction failed on-chain. Please try again.');
+          setBetLoading(false);
+          return;
+        }
+        if (conf === 'confirmed' || conf === 'finalized') {
+          confirmed = true;
+          break;
+        }
+        // Stop polling if blockhash has expired
+        const currentSlot = await connection.getSlot();
+        if (currentSlot > lastValidBlockHeight) {
+          setBetError('Transaction expired before confirming — please try again.');
+          setBetLoading(false);
+          return;
+        }
+      }
+      if (!confirmed) {
+        setBetError('Transaction did not confirm in time — please try again.');
+        setBetLoading(false);
+        return;
+      }
+
+      setBetError('');
+      setBetTx(sig);
       // If round is spinning, queue the bet for next round
       const currentStatus = round?.status;
       if (currentStatus === 'spinning') {
@@ -563,23 +613,21 @@ export default function Home() {
               <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '11px', color: 'var(--text-secondary)' }}>#{roundDisplayId}</span>
             </div>
 
-            {round?.winnerWallet && (
+            {winnerInfo && !isSpinning && (
               <div style={{
                 margin: '12px', background: 'var(--bg-card)',
                 border: '1px solid rgba(255,107,0,0.2)', borderRadius: '10px', padding: '12px', textAlign: 'center',
               }}>
-                <div style={{ fontSize: '32px', marginBottom: '6px' }}>
-                  {['🍊','🍋','🍇','🍓','🍍','🥭'][Math.floor(Math.random() * 6)]}
-                </div>
+                <div style={{ fontSize: '32px', marginBottom: '6px' }}>🏆</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px', color: 'var(--orange-soft)', marginBottom: '2px' }}>
-                  {round.winnerDisplayName}
+                  {winnerInfo.winnerDisplayName}
                 </div>
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', background: 'rgba(255,107,0,0.1)', padding: '2px 8px', borderRadius: '4px', display: 'inline-block' }}>
                   LAST WINNER
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '8px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Pot</span>
-                  <span style={{ color: 'var(--orange-soft)', fontWeight: 700 }}>◎ {(round.totalPot / 1e9).toFixed(3)}</span>
+                  <span style={{ color: 'var(--orange-soft)', fontWeight: 700 }}>◎ {(winnerInfo.totalPot / 1e9).toFixed(3)}</span>
                 </div>
               </div>
             )}
@@ -593,10 +641,14 @@ export default function Home() {
                   🍊<br />No rounds yet
                 </div>
               ) : recentRounds.map((r, i) => (
-                <div key={r.id} style={{
-                  background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                  borderRadius: '8px', padding: '10px', marginBottom: '8px',
-                }}>
+                <div
+                  key={r.id}
+                  style={{
+                    background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                    borderRadius: '8px', padding: '10px', marginBottom: '8px',
+                    animation: r.id === lastAnimatedRoundId ? 'recentRoundIn 0.5s ease forwards' : 'none',
+                  }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                     <span style={{ fontSize: '11px', fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--text-primary)' }}>{r.winnerDisplayName}</span>
                     <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>#{i + 1}</span>

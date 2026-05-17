@@ -57,6 +57,7 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
   const [cooldown, setCooldown] = useState(false);
   const [cooldownSecs, setCooldownSecs] = useState(0);
   const [avatarCache, setAvatarCache] = useState<Record<string, string | null>>({});
+  const [playerCount, setPlayerCount] = useState<number>(0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -92,16 +93,19 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
         if (s <= 0) { clearInterval(cooldownRef.current!); setCooldown(false); setCooldownSecs(0); }
       }, 1000);
     };
+    const onPlayerCount = (count: number) => setPlayerCount(count);
     socket.on('chat_history', onHistory);
     socket.on('chat_message', onMessage);
     socket.on('avatar_updated', onAvatarUpdated);
     socket.on('chat_cooldown', onCooldown);
+    socket.on('player_count', onPlayerCount);
     socket.emit('get_chat_history');
     return () => {
       socket.off('chat_history', onHistory);
       socket.off('chat_message', onMessage);
       socket.off('avatar_updated', onAvatarUpdated);
       socket.off('chat_cooldown', onCooldown);
+      socket.off('player_count', onPlayerCount);
     };
   }, [socket]);
 
@@ -159,9 +163,9 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: isConnected ? '#10b981' : '#ef4444', boxShadow: isConnected ? '0 0 6px #10b981' : 'none', flexShrink: 0 }} />
         <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>Live Chat</span>
         {!isConnected && <span style={{ fontSize: '10px', color: '#ef4444' }}>reconnecting…</span>}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>{messages.length}</span>
+        <div title="Players online" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 5px #10b981' }} />
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>{playerCount} online</span>
         </div>
       </div>
 

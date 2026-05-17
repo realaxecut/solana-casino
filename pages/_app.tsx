@@ -10,7 +10,7 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 
 export default function App({ Component, pageProps }: AppProps) {
   const [mounted, setMounted] = useState(false);
-  const endpoint = 'https://devnet.helius-rpc.com/?api-key=a67bbeed-b40f-4a5c-b95f-ceebba4323d7';
+  const endpoint = process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com';
   const wallets = useMemo(() => [], []);
 
   useEffect(() => {
