@@ -13,6 +13,7 @@ import PlayerList from '../components/PlayerList';
 import Countdown from '../components/Countdown';
 import WinnerOverlay from '../components/WinnerOverlay';
 import UsernameModal from '../components/UsernameModal';
+import SettingsModal from '../components/SettingsModal';
 
 const HOUSE_WALLET = process.env.NEXT_PUBLIC_HOUSE_WALLET || '';
 
@@ -67,6 +68,7 @@ export default function Home() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [recentRounds, setRecentRounds] = useState<RecentRound[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
   const [betAmount, setBetAmount] = useState('');
   const [betLoading, setBetLoading] = useState(false);
   const [betError, setBetError] = useState('');
@@ -75,6 +77,20 @@ export default function Home() {
   const [roundDisplayId, setRoundDisplayId] = useState(1);
   const prevWalletRef = useRef<string | null>(null);
   const prevRoundIdRef = useRef<string | null>(null);
+  const [liveTimeLeft, setLiveTimeLeft] = useState<number>(0);
+
+  useEffect(() => {
+    const tick = () => {
+      if (round?.status === 'active' && round.countdownEndsAt) {
+        setLiveTimeLeft(Math.max(0, Math.ceil((round.countdownEndsAt - Date.now()) / 1000)));
+      } else {
+        setLiveTimeLeft(0);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [round?.status, round?.countdownEndsAt]);
 
   const wallet = publicKey?.toBase58() || null;
 
@@ -101,19 +117,15 @@ export default function Home() {
       setIsSpinning(r.status === 'spinning');
     });
     s.on('spin_started', () => setIsSpinning(true));
+    s.on('recent_rounds', (rounds: RecentRound[]) => setRecentRounds(rounds));
     s.on('winner_announced', (info: WinnerInfo) => {
       setWinnerInfo(info);
       setShowWinner(true);
       setIsSpinning(false);
-      setRecentRounds(prev => [{
-        id: Date.now().toString(),
-        winnerDisplayName: info.winnerDisplayName,
-        winnerWallet: info.winnerWallet,
-        winnerShare: info.winnerShare,
-        totalPot: info.totalPot,
-        winnerChance: 0,
-        endedAt: Date.now(),
-      }, ...prev].slice(0, 10));
+      // recentRounds are now updated server-side via 'recent_rounds' event after endRound
+    });
+    s.on('username_changed', ({ wallet: changedWallet, newName }: { wallet: string; newName: string }) => {
+      if (changedWallet === publicKey?.toBase58()) setDisplayName(newName);
     });
     s.on('new_round', () => {
       setIsSpinning(false);
@@ -179,7 +191,7 @@ export default function Home() {
     { label: 'Your Wager', value: myBetSol, icon: '◎', accent: false },
     { label: 'Your Chance', value: myChance > 0 ? myChance.toFixed(2) + '%' : '0.00%', icon: null, accent: false },
     { label: 'Time Remaining', value: round?.status === 'active' && round.countdownEndsAt
-        ? `${Math.floor(Math.max(0,(round.countdownEndsAt - Date.now())/1000)/60).toString().padStart(2,'0')}:${(Math.max(0,Math.ceil((round.countdownEndsAt - Date.now())/1000)) % 60).toString().padStart(2,'0')}`
+        ? `${Math.floor(liveTimeLeft / 60).toString().padStart(2,'0')}:${(liveTimeLeft % 60).toString().padStart(2,'0')}`
         : 'Waiting...', icon: null, accent: false },
   ];
 
@@ -191,7 +203,7 @@ export default function Home() {
       </Head>
 
       {showUsernameModal && wallet && (
-        <UsernameModal wallet={wallet} onConfirm={handleUsernameConfirm} />
+        <UsernameModal wallet={wallet} socket={socket} onConfirm={handleUsernameConfirm} />
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
@@ -245,6 +257,20 @@ export default function Home() {
               }}>{displayName.charAt(0).toUpperCase()}</div>
               {displayName}
             </div>
+          )}
+
+          {wallet && (
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+              style={{
+                background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                borderRadius: '8px', color: 'var(--text-muted)', cursor: 'pointer',
+                width: '34px', height: '34px', fontSize: '16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, transition: 'background 0.15s',
+              }}
+            >⚙️</button>
           )}
 
           <WalletMultiButton />
@@ -319,7 +345,7 @@ export default function Home() {
           {/* ── CENTER ── */}
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', overflow: 'hidden',
+            alignItems: 'center', overflow: 'hidden', minHeight: 0,
           }}>
 
             {/* BET PANEL — always visible, pinned at top */}
@@ -538,6 +564,16 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {showSettings && wallet && (
+        <SettingsModal
+          wallet={wallet}
+          currentDisplayName={displayName}
+          socket={socket}
+          onClose={() => setShowSettings(false)}
+          onUsernameChanged={(name) => { setDisplayName(name); setShowSettings(false); }}
+        />
+      )}
 
       {showWinner && winnerInfo && (
         <WinnerOverlay

@@ -12,7 +12,7 @@ import { Socket } from 'socket.io-client';
 // ─── HOUSE WALLET ───────────────────────────────────────────────────────────
 // Replace this with your actual Solana mainnet house wallet address.
 // All bets are sent here; the backend tracks them and pays out winners.
-const HOUSE_WALLET = 'REPLACE_WITH_YOUR_HOUSE_WALLET_ADDRESS';
+const HOUSE_WALLET = process.env.NEXT_PUBLIC_HOUSE_WALLET || '';
 // ────────────────────────────────────────────────────────────────────────────
 
 interface BetPanelProps {
@@ -40,7 +40,7 @@ export default function BetPanel({ socket, displayName, roundStatus, myBet, isCo
     setError('');
     setTxSig('');
 
-    if (HOUSE_WALLET === 'REPLACE_WITH_YOUR_HOUSE_WALLET_ADDRESS') {
+    if (!HOUSE_WALLET) {
       setError('House wallet not configured — contact support.');
       return;
     }
