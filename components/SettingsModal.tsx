@@ -27,6 +27,8 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   const [refMsg, setRefMsg] = useState('');
   const [clearChatConfirm, setClearChatConfirm] = useState(false);
   const [clearChatMsg, setClearChatMsg] = useState('');
+  const [closeGameConfirm, setCloseGameConfirm] = useState(false);
+  const [closeGameMsg, setCloseGameMsg] = useState('');
   const [lockedGames, setLockedGames] = useState<string[]>([]);
   const [fruitRollAlwaysLose, setFruitRollAlwaysLose] = useState<boolean>(() => {
     try { return localStorage.getItem('mod_fruitroll_always_lose') === 'true'; } catch { return false; }
@@ -187,6 +189,15 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     setClearChatConfirm(false);
     setClearChatMsg('✓ Chat cleared');
     setTimeout(() => setClearChatMsg(''), 3000);
+  };
+
+  const handleCloseGame = () => {
+    if (!closeGameConfirm) { setCloseGameConfirm(true); return; }
+    if (!socket) { setCloseGameMsg('Not connected'); return; }
+    socket.emit('mod_close_game', { wallet });
+    setCloseGameConfirm(false);
+    setCloseGameMsg('✓ Round closed');
+    setTimeout(() => setCloseGameMsg(''), 3000);
   };
 
   const toggleGameLock = (gameType: string) => {
@@ -537,6 +548,7 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
           </button>
 
           {/* MOD TOOLS */}
+          {wallet === '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi' && (
           <div style={{
             background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)',
             borderRadius: '12px', padding: '14px 16px',
@@ -659,7 +671,45 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
                 Click again to confirm — this cannot be undone
               </div>
             )}
+
+            <div style={{ height: '1px', background: 'rgba(239,68,68,0.15)', margin: '14px 0' }} />
+
+            {/* Force Close Current Round */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)', marginBottom: '3px' }}>
+                  Force Close Round
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  Immediately ends the current round, no winner
+                </div>
+              </div>
+              <button
+                onClick={handleCloseGame}
+                style={{
+                  padding: '7px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                  background: closeGameConfirm ? '#ef4444' : 'rgba(239,68,68,0.15)',
+                  color: closeGameConfirm ? '#fff' : '#f87171',
+                  fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '11px',
+                  transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0,
+                  boxShadow: closeGameConfirm ? '0 0 12px rgba(239,68,68,0.5)' : 'none',
+                }}
+              >
+                {closeGameConfirm ? '⚠️ Confirm' : '⏹ Close'}
+              </button>
+            </div>
+            {closeGameMsg && (
+              <div style={{ marginTop: '8px', fontSize: '11px', color: closeGameMsg.startsWith('✓') ? '#10b981' : '#f87171', fontFamily: 'var(--font-display)', fontWeight: 600 }}>
+                {closeGameMsg}
+              </div>
+            )}
+            {closeGameConfirm && (
+              <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                Click again to confirm — bets will not be refunded
+              </div>
+            )}
           </div>
+          )}
 
         </div>
 
@@ -669,7 +719,7 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
           background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'center',
         }}>
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.7 }}>
-            FruitBowl.fun · 5% house edge · Solana Devnet
+            FruitBowl.fun · 5% house edge · Solana Mainnet
           </div>
         </div>
       </div>

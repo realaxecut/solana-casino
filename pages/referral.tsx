@@ -6,6 +6,7 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { io, Socket } from 'socket.io-client';
 import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 import Chat from '../components/Chat';
+import SettingsModal from '../components/SettingsModal';
 
 interface ReferralStats {
   totalReferrals: number;
@@ -36,6 +37,7 @@ export default function ReferralPage() {
   const [connected, setConnected] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [earnings, setEarnings] = useState<ReferralEarning[]>([]);
@@ -183,7 +185,10 @@ export default function ReferralPage() {
           background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)',
           padding: '0 20px', gap: '16px',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+          <div
+            onClick={() => router.push('/')}
+            style={{ display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer' }}
+          >
             <span style={{ fontSize: '26px', lineHeight: 1 }}>🍓</span>
             <span style={{
               fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '18px',
@@ -259,6 +264,19 @@ export default function ReferralPage() {
             </div>
           )}
 
+          {wallet && (
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+              style={{
+                background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                borderRadius: '8px', color: 'var(--text-muted)', cursor: 'pointer',
+                width: '34px', height: '34px', fontSize: '16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, transition: 'background 0.15s',
+              }}
+            >⚙️</button>
+          )}
           <WalletMultiButton />
         </header>
 
@@ -555,6 +573,15 @@ export default function ReferralPage() {
           </div>
         </div>
       </div>
+      {showSettings && wallet && (
+        <SettingsModal
+          wallet={wallet}
+          currentDisplayName={displayName}
+          socket={socket}
+          onClose={() => setShowSettings(false)}
+          onUsernameChanged={(name) => { setDisplayName(name); setShowSettings(false); }}
+        />
+      )}
     </>
   );
 }

@@ -192,21 +192,30 @@ export default function Home() {
     setBetError(''); setBetTx('');
     if (!HOUSE_WALLET) { setBetError('House wallet not configured.'); return; }
     const sol = parseFloat(betAmount);
-    if (isNaN(sol) || sol < 0.0001) { setBetError('Minimum bet is 0.0001 SOL'); return; }
+    if (isNaN(sol) || sol < 0.001) { setBetError('Minimum bet is 0.001 SOL'); return; }
     const status = round?.status || 'waiting';
     if (status === 'spinning' || status === 'ended') { setBetError('Round is closed'); return; }
     setBetLoading(true);
     try {
       // Check wallet is on the correct network
+      // NOTE: useConnection() returns the site's RPC (always mainnet), NOT the wallet's network.
+      // We must read the wallet adapter's own rpcEndpoint to check what cluster the user has selected.
       const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
       const MAINNET_GENESIS = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
       const expectedNetwork = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'mainnet-beta';
       const expectedGenesis = expectedNetwork === 'devnet' ? DEVNET_GENESIS : MAINNET_GENESIS;
       const expectedName = expectedNetwork === 'devnet' ? 'Devnet' : 'Mainnet';
-      const genesis = await connection.getGenesisHash();
+      const walletRpc: string =
+        (window as any).phantom?.solana?.connection?._rpcEndpoint ||
+        (window as any).solana?.connection?._rpcEndpoint ||
+        (window as any).backpack?.connection?._rpcEndpoint ||
+        connection.rpcEndpoint;
+      const { Connection: SolConnection } = await import('@solana/web3.js');
+      const walletConnection = new SolConnection(walletRpc, 'confirmed');
+      const genesis = await walletConnection.getGenesisHash();
       if (genesis !== expectedGenesis) {
-        const wrongName = genesis === DEVNET_GENESIS ? 'Devnet' : 'Mainnet';
-        setBetError(`❌ Your wallet is on ${wrongName} but this site uses ${expectedName}. Please switch networks in your wallet.`);
+        const wrongName = genesis === DEVNET_GENESIS ? 'Devnet' : genesis === MAINNET_GENESIS ? 'Mainnet' : 'Unknown network';
+        setBetError(`❌ Switch your wallet to ${expectedName} — you're currently on ${wrongName}.`);
         setBetLoading(false);
         return;
       }
@@ -560,7 +569,7 @@ export default function Home() {
                       type="number"
                       value={betAmount}
                       onChange={e => setBetAmount(e.target.value)}
-                      min="0.0001" step="0.0001"
+                      min="0.001" step="0.001"
                       placeholder="0.1"
                       style={{
                         flex: 1, background: 'transparent', border: 'none',

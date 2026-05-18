@@ -6,6 +6,7 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { io, Socket } from 'socket.io-client';
+import SettingsModal from '../components/SettingsModal';
 
 const HOUSE_WALLET = process.env.NEXT_PUBLIC_HOUSE_WALLET || '';
 const HOUSE_EDGE = 0.05;
@@ -81,6 +82,8 @@ export default function FruitRoll() {
 
   // Claim state
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [displayName, setDisplayName] = useState('');
   const [claimId, setClaimId] = useState<string | null>(null);
   const [claimState, setClaimState] = useState<'registering' | 'ready' | 'claiming' | 'success' | 'error' | null>(null);
   const [claimTx, setClaimTx] = useState<string | null>(null);
@@ -262,7 +265,7 @@ export default function FruitRoll() {
     if (!pickedFruit) { setBetError('Pick a fruit first!'); return; }
     if (!HOUSE_WALLET) { setBetError('House wallet not configured.'); return; }
     const sol = parseFloat(betAmount);
-    if (isNaN(sol) || sol < 0.0001) { setBetError('Minimum bet is 0.0001 SOL'); return; }
+    if (isNaN(sol) || sol < 0.001) { setBetError('Minimum bet is 0.001 SOL'); return; }
     if (phase !== 'idle') { setBetError('Race already in progress!'); return; }
 
     setBetLoading(true);
@@ -272,10 +275,21 @@ export default function FruitRoll() {
       const expectedNetwork = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'mainnet-beta';
       const expectedGenesis = expectedNetwork === 'devnet' ? DEVNET_GENESIS : MAINNET_GENESIS;
       const expectedName = expectedNetwork === 'devnet' ? 'Devnet' : 'Mainnet';
-      const genesis = await connection.getGenesisHash();
+
+      // Detect the wallet's actual cluster by querying its own RPC endpoint.
+      // useConnection() always returns the site's RPC (mainnet), NOT the wallet's network,
+      // so we pull the wallet adapter's rpcEndpoint directly and create a fresh Connection.
+      const walletRpc: string =
+        (window as any).phantom?.solana?.connection?._rpcEndpoint ||
+        (window as any).solana?.connection?._rpcEndpoint ||
+        (window as any).backpack?.connection?._rpcEndpoint ||
+        connection.rpcEndpoint; // final fallback to site RPC
+      const { Connection: SolConnection } = await import('@solana/web3.js');
+      const walletConnection = new SolConnection(walletRpc, 'confirmed');
+      const genesis = await walletConnection.getGenesisHash();
       if (genesis !== expectedGenesis) {
-        const wrongName = genesis === DEVNET_GENESIS ? 'Devnet' : 'Mainnet';
-        setBetError(`❌ Wallet is on ${wrongName} but site uses ${expectedName}.`);
+        const wrongName = genesis === DEVNET_GENESIS ? 'Devnet' : genesis === MAINNET_GENESIS ? 'Mainnet' : 'Unknown network';
+        setBetError(`❌ Switch your wallet to ${expectedName} — you're currently on ${wrongName}.`);
         setBetLoading(false); return;
       }
 
@@ -378,7 +392,10 @@ export default function FruitRoll() {
           background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)',
           padding: '0 20px', gap: '16px',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+          <div
+            onClick={() => router.push('/')}
+            style={{ display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer' }}
+          >
             <span style={{ fontSize: '26px', lineHeight: 1 }}>🍓</span>
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '18px', color: '#e53e3e', letterSpacing: '-0.01em' }}>
               FruitBowl<span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>.fun</span>
@@ -423,6 +440,19 @@ export default function FruitRoll() {
           </nav>
 
           <div style={{ flex: 1 }} />
+          {wallet && (
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+              style={{
+                background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                borderRadius: '8px', color: 'var(--text-muted)', cursor: 'pointer',
+                width: '34px', height: '34px', fontSize: '16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, transition: 'background 0.15s',
+              }}
+            >⚙️</button>
+          )}
           <WalletMultiButton />
         </header>
 
@@ -446,7 +476,7 @@ export default function FruitRoll() {
               onClick={() => router.push('/')}
               style={{ fontSize: '11px', color: 'rgba(16,185,129,0.7)', fontFamily: 'var(--font-display)', fontWeight: 600, textDecoration: 'underline', cursor: 'pointer' }}
             >
-              Claim via Orangepot Settings →
+              Claim in Settings →
             </span>
           </div>
         )}
@@ -541,7 +571,7 @@ export default function FruitRoll() {
                 <span style={{ fontSize: '18px' }}>🍊</span>
                 <input
                   type="number" value={betAmount} onChange={e => setBetAmount(e.target.value)}
-                  min="0.0001" step="0.0001" placeholder="0.1"
+                  min="0.001" step="0.001" placeholder="0.1"
                   disabled={phase !== 'idle'}
                   style={{
                     flex: 1, background: 'transparent', border: 'none',
@@ -971,6 +1001,15 @@ export default function FruitRoll() {
           50%     { filter: drop-shadow(0 0 20px rgba(72,187,120,1))    drop-shadow(0 0 50px rgba(72,187,120,0.85)) drop-shadow(0 0 90px rgba(72,187,120,0.55)) drop-shadow(0 0 140px rgba(72,187,120,0.25)); opacity: 0.9; }
         }
       `}</style>
+      {showSettings && wallet && (
+        <SettingsModal
+          wallet={wallet}
+          currentDisplayName={displayName}
+          socket={socket}
+          onClose={() => setShowSettings(false)}
+          onUsernameChanged={(name) => { setDisplayName(name); setShowSettings(false); }}
+        />
+      )}
     </>
   );
 }
