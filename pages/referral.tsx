@@ -207,6 +207,16 @@ export default function ReferralPage() {
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
             >🍊 Orangepot</div>
 
+            {/* Referrals — active */}
+            <div style={{
+              height: '100%', display: 'flex', alignItems: 'center',
+              padding: '0 16px',
+              borderBottom: '2px solid var(--orange-bright)',
+              color: 'var(--text-primary)',
+              fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px',
+              cursor: 'pointer', letterSpacing: '0.01em',
+            }}>🔗 Referrals</div>
+
             {/* FruitFlip */}
             <div
               title="Coming Soon"
@@ -220,16 +230,6 @@ export default function ReferralPage() {
                 opacity: 0.4, filter: 'grayscale(1)',
               }}
             >🍓 FruitFlip</div>
-
-            {/* Referrals — active */}
-            <div style={{
-              height: '100%', display: 'flex', alignItems: 'center',
-              padding: '0 16px',
-              borderBottom: '2px solid var(--orange-bright)',
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px',
-              cursor: 'pointer', letterSpacing: '0.01em',
-            }}>🔗 Referrals</div>
           </nav>
 
           <div style={{ flex: 1 }} />

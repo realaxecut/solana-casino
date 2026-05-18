@@ -63,6 +63,7 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
   const [mutedWallets, setMutedWallets] = useState<Set<string>>(new Set());
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!socket) return;
@@ -129,7 +130,9 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
   }, [isConnected, socket]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const sendMessage = useCallback(() => {
@@ -200,7 +203,7 @@ export default function Chat({ socket, currentWallet, currentDisplayName, isConn
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0', display: 'flex', flexDirection: 'column' }}>
+      <div ref={scrollContainerRef} style={{ flex: 1, overflow: 'hidden', padding: '4px 0', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', marginTop: '48px', lineHeight: 1.8 }}>
             <div style={{ fontSize: '28px', marginBottom: '8px' }}>💬</div>

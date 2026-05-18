@@ -21,6 +21,10 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState('');
   const [levelInfo, setLevelInfo] = useState<any>(null);
+  const [referredBy, setReferredBy] = useState<string | null>(() => localStorage.getItem(`referredBy_${wallet}`));
+  const [refInput, setRefInput] = useState('');
+  const [refSaving, setRefSaving] = useState(false);
+  const [refMsg, setRefMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -197,6 +201,77 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: '13px', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
               {shortWallet}
             </div>
+          </div>
+
+          {/* Referral code */}
+          <div style={{
+            background: 'rgba(255,107,0,0.04)', border: '1px solid rgba(255,107,0,0.15)',
+            borderRadius: '12px', padding: '14px 16px', marginBottom: '24px',
+          }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: '10px', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+              🔗 REFERRED BY
+            </div>
+            {referredBy ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ fontFamily: 'Space Mono, monospace', fontSize: '13px', color: 'var(--orange-soft)', letterSpacing: '0.04em' }}>
+                    {referredBy}
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#10b981', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '4px', padding: '2px 6px' }}>
+                    applied
+                  </div>
+                </div>
+                <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.2)', marginTop: '6px' }}>
+                  Referral codes can only be set once.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                  <input
+                    type="text"
+                    value={refInput}
+                    onChange={(e) => { setRefInput(e.target.value.slice(0, 20)); setRefMsg(''); }}
+                    placeholder="Enter referral code..."
+                    maxLength={20}
+                    style={{
+                      flex: 1, background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,107,0,0.25)', borderRadius: '8px',
+                      color: '#fff', fontFamily: 'Space Mono, monospace',
+                      fontSize: '13px', padding: '9px 12px',
+                      outline: 'none', boxSizing: 'border-box',
+                    }}
+                  />
+                  <button
+                    disabled={refSaving || !refInput.trim()}
+                    onClick={() => {
+                      const code = refInput.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                      if (!code) { setRefMsg('Enter a valid code'); return; }
+                      setRefSaving(true);
+                      localStorage.setItem(`referredBy_${wallet}`, code);
+                      if (socket) socket.emit('register_referral', { referredWallet: wallet, referrerWallet: code });
+                      setReferredBy(code);
+                      setRefSaving(false);
+                      setRefMsg('');
+                    }}
+                    style={{
+                      padding: '9px 14px', borderRadius: '8px', fontSize: '12px',
+                      fontFamily: 'var(--font-display)', fontWeight: 700,
+                      border: 'none', cursor: refInput.trim() ? 'pointer' : 'not-allowed',
+                      background: refInput.trim() ? 'linear-gradient(135deg,#cc5500,#ff8c00)' : 'rgba(255,255,255,0.06)',
+                      color: refInput.trim() ? '#fff' : 'var(--text-muted)',
+                      transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0,
+                    }}
+                  >
+                    {refSaving ? '...' : 'Apply'}
+                  </button>
+                </div>
+                {refMsg && <div style={{ fontSize: '11px', color: '#f87171', marginBottom: '4px' }}>{refMsg}</div>}
+                <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.2)' }}>
+                  Can only be set once — cannot be changed after.
+                </div>
+              </>
+            )}
           </div>
 
           {/* Avatar section */}

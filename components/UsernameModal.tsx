@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface UsernameModalProps {
   wallet: string;
-  socket: any; // kept for API compatibility but no longer used for checking
-  onConfirm: (username: string) => void;
+  socket: any;
+  onConfirm: (username: string, referralCode?: string) => void;
 }
 
 export default function UsernameModal({ wallet, onConfirm }: UsernameModalProps) {
   const [name, setName] = useState('');
+  const [refCode, setRefCode] = useState('');
   const [error, setError] = useState('');
   const [visible, setVisible] = useState(false);
 
@@ -28,7 +29,8 @@ export default function UsernameModal({ wallet, onConfirm }: UsernameModalProps)
     const trimmed = name.trim();
     const validationError = validate(trimmed);
     if (validationError) { setError(validationError); return; }
-    onConfirm(trimmed);
+    const code = refCode.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || undefined;
+    onConfirm(trimmed, code);
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -70,6 +72,7 @@ export default function UsernameModal({ wallet, onConfirm }: UsernameModalProps)
           <br />Your username will appear in chat and on the leaderboard.
         </div>
 
+        {/* Username input */}
         <div style={{ marginBottom: '8px', position: 'relative' }}>
           <input
             type="text"
@@ -105,8 +108,37 @@ export default function UsernameModal({ wallet, onConfirm }: UsernameModalProps)
         )}
         {!error && !localValid && <div style={{ marginBottom: '12px', height: '18px' }} />}
 
-        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.25)', marginBottom: '20px', textAlign: 'right' }}>
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.25)', marginBottom: '24px', textAlign: 'right' }}>
           {name.length}/20
+        </div>
+
+        {/* Referral code input */}
+        <div style={{
+          background: 'rgba(255,107,0,0.05)', border: '1px solid rgba(255,107,0,0.15)',
+          borderRadius: '12px', padding: '16px', marginBottom: '20px', textAlign: 'left',
+        }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '12px', color: 'rgba(255,179,71,0.8)', marginBottom: '8px', letterSpacing: '0.04em' }}>
+            🔗 REFERRAL CODE <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.3)', fontSize: '11px' }}>(optional)</span>
+          </div>
+          <input
+            type="text"
+            value={refCode}
+            onChange={(e) => setRefCode(e.target.value.slice(0, 20))}
+            onKeyDown={handleKey}
+            placeholder="Enter code if you were referred..."
+            maxLength={20}
+            style={{
+              width: '100%', background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,107,0,0.2)', borderRadius: '8px',
+              color: '#fff', fontFamily: 'Space Mono, monospace',
+              fontSize: '13px', padding: '10px 12px',
+              outline: 'none', boxSizing: 'border-box',
+              transition: 'border-color 0.2s',
+            }}
+          />
+          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginTop: '6px' }}>
+            This can only be set once and cannot be changed later.
+          </div>
         </div>
 
         <button

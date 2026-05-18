@@ -162,11 +162,16 @@ export default function Home() {
     socket.emit('register_user', { wallet, displayName });
   }, [wallet, socket, displayName]);
 
-  const handleUsernameConfirm = useCallback((name: string) => {
+  const handleUsernameConfirm = useCallback((name: string, referralCode?: string) => {
     setDisplayName(name);
     setShowUsernameModal(false);
     if (wallet) {
       localStorage.setItem(`username_${wallet}`, name);
+      // Store referral code once — only if provided and not already set
+      if (referralCode && !localStorage.getItem(`referredBy_${wallet}`)) {
+        localStorage.setItem(`referredBy_${wallet}`, referralCode);
+        if (socket) socket.emit('register_referral', { referredWallet: wallet, referrerWallet: referralCode });
+      }
       fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wallet, displayName: name }) }).catch(console.error);
       if (socket) socket.emit('register_user', { wallet, displayName: name });
     }
@@ -313,6 +318,28 @@ export default function Home() {
               cursor: 'pointer', letterSpacing: '0.01em',
             }}>🍊 Orangepot</div>
             <div
+              onClick={() => router.push('/referral')}
+              style={{
+                height: '100%', display: 'flex', alignItems: 'center',
+                padding: '0 16px',
+                borderBottom: '2px solid transparent',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px',
+                cursor: 'pointer', letterSpacing: '0.01em',
+                transition: 'color 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)';
+                (e.currentTarget as HTMLElement).style.borderBottomColor = 'rgba(167,139,250,0.6)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)';
+                (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent';
+              }}
+            >
+              🔗 Referrals
+            </div>
+            <div
               title="Coming Soon"
               style={{
                 height: '100%', display: 'flex', alignItems: 'center',
@@ -352,28 +379,6 @@ export default function Home() {
                 opacity: 1,
                 filter: 'none',
               }}>Coming Soon</span>
-            </div>
-            <div
-              onClick={() => router.push('/referral')}
-              style={{
-                height: '100%', display: 'flex', alignItems: 'center',
-                padding: '0 16px',
-                borderBottom: '2px solid transparent',
-                color: 'var(--text-muted)',
-                fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '13px',
-                cursor: 'pointer', letterSpacing: '0.01em',
-                transition: 'color 0.15s, border-color 0.15s',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)';
-                (e.currentTarget as HTMLElement).style.borderBottomColor = 'rgba(167,139,250,0.6)';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)';
-                (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent';
-              }}
-            >
-              🔗 Referrals
             </div>
           </nav>
 
