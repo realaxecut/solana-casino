@@ -23,9 +23,13 @@ interface ReferralEarning {
   referred_wallet: string;
   referred_name: string | null;
   round_id: string;
-  win_amount: number;
+  earning_type: 'win' | 'loss';
+  source_amount: number;
   bonus_amount: number;
-  paid_at: number;
+  claimed: number;
+  claim_tx: string | null;
+  created_at: number;
+  claimed_at: number | null;
 }
 
 export default function ReferralPage() {
@@ -40,7 +44,13 @@ export default function ReferralPage() {
   const [showSettings, setShowSettings] = useState(false);
 
   const [stats, setStats] = useState<ReferralStats | null>(null);
-  const [earnings, setEarnings] = useState<ReferralEarning[]>([]);
+  const [pendingEarnings, setPendingEarnings] = useState<ReferralEarning[]>([]);
+  const [claimedEarnings, setClaimedEarnings] = useState<ReferralEarning[]>([]);
+  const [totalUnclaimed, setTotalUnclaimed] = useState(0);
+  const [totalClaimed, setTotalClaimed] = useState(0);
+  const [payoutsPaused, setPayoutsPaused] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [claimResult, setClaimResult] = useState<{ success: boolean; tx?: string; error?: string; amount?: number } | null>(null);
   const [copied, setCopied] = useState(false);
   const [refParam, setRefParam] = useState<string | null>(null);
   const [referralRegistered, setReferralRegistered] = useState(false);
@@ -85,7 +95,7 @@ export default function ReferralPage() {
 
     socket.emit('register_user', { wallet, displayName: displayName || wallet.slice(0, 8) });
     socket.emit('get_referral_stats', { wallet });
-    socket.emit('get_referral_earnings', { wallet });
+    socket.emit('get_pending_referral_earnings', { wallet });
     socket.emit('get_referral_slug', { wallet });
 
     if (refParam && refParam !== wallet) {
@@ -93,7 +103,13 @@ export default function ReferralPage() {
     }
 
     const onStats = (data: ReferralStats) => setStats(data);
-    const onEarnings = (data: ReferralEarning[]) => setEarnings(data);
+    const onPendingEarnings = (data: { pending: ReferralEarning[]; claimed: ReferralEarning[]; totalUnclaimed: number; totalClaimed: number; paused: boolean }) => {
+      setPendingEarnings(data.pending);
+      setClaimedEarnings(data.claimed);
+      setTotalUnclaimed(data.totalUnclaimed);
+      setTotalClaimed(data.totalClaimed);
+      setPayoutsPaused(data.paused);
+    };
     const onRegistered = (result: { success: boolean }) => { if (result.success) setReferralRegistered(true); };
     const onSlug = ({ slug }: { slug: string | null }) => {
       setCurrentSlug(slug);
@@ -116,25 +132,50 @@ export default function ReferralPage() {
       if (referrerWallet === wallet) {
         setLiveBonus({ amount: bonusAmount });
         socket.emit('get_referral_stats', { wallet });
-        socket.emit('get_referral_earnings', { wallet });
+        socket.emit('get_pending_referral_earnings', { wallet });
         setTimeout(() => setLiveBonus(null), 6000);
       }
     };
+    const onBonusQueued = ({ referrerWallet, bonusAmount }: any) => {
+      if (referrerWallet === wallet) {
+        setLiveBonus({ amount: bonusAmount });
+        socket.emit('get_pending_referral_earnings', { wallet });
+        setTimeout(() => setLiveBonus(null), 6000);
+      }
+    };
+    const onClaimResult = (result: { success: boolean; claimTx?: string; amount?: number; error?: string }) => {
+      setClaiming(false);
+      if (result.success) {
+        setClaimResult({ success: true, tx: result.claimTx, amount: result.amount });
+        socket.emit('get_pending_referral_earnings', { wallet });
+        socket.emit('get_referral_stats', { wallet });
+      } else {
+        setClaimResult({ success: false, error: result.error });
+      }
+      setTimeout(() => setClaimResult(null), 8000);
+    };
+    const onPayoutsPaused = ({ paused }: { paused: boolean }) => setPayoutsPaused(paused);
 
     socket.on('referral_stats', onStats);
-    socket.on('referral_earnings', onEarnings);
+    socket.on('pending_referral_earnings', onPendingEarnings);
     socket.on('referral_registered', onRegistered);
     socket.on('referral_slug', onSlug);
     socket.on('referral_slug_result', onSlugResult);
     socket.on('referral_bonus', onBonus);
+    socket.on('referral_bonus_queued', onBonusQueued);
+    socket.on('referral_claim_result', onClaimResult);
+    socket.on('referral_payouts_paused', onPayoutsPaused);
 
     return () => {
       socket.off('referral_stats', onStats);
-      socket.off('referral_earnings', onEarnings);
+      socket.off('pending_referral_earnings', onPendingEarnings);
       socket.off('referral_registered', onRegistered);
       socket.off('referral_slug', onSlug);
       socket.off('referral_slug_result', onSlugResult);
       socket.off('referral_bonus', onBonus);
+      socket.off('referral_bonus_queued', onBonusQueued);
+      socket.off('referral_claim_result', onClaimResult);
+      socket.off('referral_payouts_paused', onPayoutsPaused);
     };
   }, [socket, wallet, refParam, displayName]);
 
@@ -151,6 +192,13 @@ export default function ReferralPage() {
       setTimeout(() => setCopied(false), 2000);
     });
   }, [referralLink]);
+
+  const handleClaimEarnings = useCallback(() => {
+    if (!socket || !wallet || claiming || totalUnclaimed === 0 || payoutsPaused) return;
+    setClaiming(true);
+    setClaimResult(null);
+    socket.emit('claim_referral_earnings', { wallet });
+  }, [socket, wallet, claiming, totalUnclaimed, payoutsPaused]);
 
   const handleSaveSlug = () => {
     if (!socket || !wallet) return;
@@ -289,8 +337,8 @@ export default function ReferralPage() {
         }}>
           {[
             { label: 'Your Referrals', value: stats?.totalReferrals ?? '—', icon: '👥', accent: false },
-            { label: 'SOL Earned', value: stats ? formatSol(stats.totalEarned) : '—', icon: '◎', accent: true },
-            { label: 'Bonus Rate', value: '30%', icon: null, accent: false },
+            { label: 'Unclaimed', value: totalUnclaimed > 0 ? `◎ ${formatSol(totalUnclaimed)}` : '—', icon: null, accent: totalUnclaimed > 0 },
+            { label: 'Total Claimed', value: totalClaimed > 0 ? `◎ ${formatSol(totalClaimed)}` : '—', icon: '◎', accent: false },
             { label: 'Your Link', value: activeCode ? `/?ref=${activeCode}` : 'Not set', icon: null, accent: false },
           ].map(({ label, value, icon, accent }) => (
             <div key={label} style={{
@@ -402,9 +450,9 @@ export default function ReferralPage() {
                     <div style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '14px' }}>HOW IT WORKS</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {[
-                        { icon: '🔗', title: 'Share your link', desc: 'Send your unique link to anyone' },
-                        { icon: '🎰', title: 'They play & win', desc: 'Your friend joins the Orangepot' },
-                        { icon: '💸', title: 'You earn 30%', desc: '30% of every pot they win, auto-paid to you on-chain' },
+                        { icon: '🔗', title: 'Share your link', desc: 'Send your unique referral link to anyone' },
+                        { icon: '🎰', title: 'They play', desc: 'Your referred friend joins games on FruitBowl' },
+                        { icon: '💸', title: 'You earn', desc: '30% of house tax when they win + 30% of their bet when they lose — claim any time' },
                       ].map(step => (
                         <div key={step.title} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                           <span style={{ fontSize: '20px', flexShrink: 0 }}>{step.icon}</span>
@@ -421,7 +469,7 @@ export default function ReferralPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     {[
                       { label: 'REFERRED PLAYERS', value: stats?.totalReferrals ?? '—', color: 'var(--text-primary)' },
-                      { label: 'TOTAL EARNED', value: stats ? `◎ ${formatSol(stats.totalEarned)}` : '—', color: '#10b981' },
+                      { label: 'TOTAL CLAIMED', value: totalClaimed > 0 ? `◎ ${formatSol(totalClaimed)}` : '—', color: '#10b981' },
                     ].map(({ label, value, color }) => (
                       <div key={label} style={{
                         background: 'var(--bg-card)', border: '1px solid var(--border-color)',
@@ -527,43 +575,145 @@ export default function ReferralPage() {
                     </div>
                   </div>
 
-                  {/* Earnings history */}
+                  {/* Claimable Earnings Panel */}
                   <div style={{
                     background: 'var(--bg-card)', border: '1px solid var(--border-color)',
                     borderRadius: '14px', padding: '18px 20px', flex: 1,
                   }}>
-                    <div style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
-                      EARNINGS HISTORY
+                    {/* Header row */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                      <div style={{ fontFamily: 'var(--font-display)', fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>
+                        CLAIMABLE EARNINGS
+                      </div>
+                      {totalUnclaimed > 0 && (
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#10b981', fontFamily: 'var(--font-display)' }}>
+                          ◎{formatSol(totalUnclaimed)} ready
+                        </div>
+                      )}
                     </div>
-                    {earnings.length === 0 ? (
-                      <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', padding: '28px 0', lineHeight: 1.7 }}>
-                        No earnings yet.<br />
-                        <span style={{ fontSize: '11px' }}>Share your link and start earning 30% of every win!</span>
+
+                    {/* Paused banner */}
+                    {payoutsPaused && (
+                      <div style={{
+                        background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.35)',
+                        borderRadius: '10px', padding: '10px 14px', marginBottom: '14px',
+                        fontSize: '12px', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px',
+                      }}>
+                        <span style={{ fontSize: '16px' }}>⏸</span>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>Payouts temporarily paused</div>
+                          <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px' }}>The moderator has paused referral payouts. Your earnings are safe — try again soon.</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Claim result */}
+                    {claimResult && (
+                      <div style={{
+                        background: claimResult.success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                        border: `1px solid ${claimResult.success ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`,
+                        borderRadius: '10px', padding: '10px 14px', marginBottom: '14px',
+                        fontSize: '12px', color: claimResult.success ? '#10b981' : '#f87171',
+                      }}>
+                        {claimResult.success ? (
+                          <>
+                            <div style={{ fontWeight: 700 }}>✓ Claimed ◎{formatSol(claimResult.amount || 0)}!</div>
+                            {claimResult.tx && (
+                              <div style={{ fontSize: '10px', marginTop: '4px', opacity: 0.8, fontFamily: 'Space Mono, monospace' }}>
+                                tx: {claimResult.tx.slice(0, 20)}…
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ fontWeight: 600 }}>⚠ {claimResult.error}</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Pending list */}
+                    {pendingEarnings.length === 0 ? (
+                      <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', padding: '20px 0 8px', lineHeight: 1.7 }}>
+                        No unclaimed earnings yet.<br />
+                        <span style={{ fontSize: '11px' }}>Share your link — earn when they win or lose.</span>
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {earnings.map(e => (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px', maxHeight: '200px', overflowY: 'auto' }}>
+                        {pendingEarnings.map(e => (
                           <div key={e.id} style={{
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                            padding: '10px 12px', background: 'rgba(255,255,255,0.03)',
-                            borderRadius: '8px', border: '1px solid var(--border-color)',
+                            padding: '8px 12px', background: 'rgba(16,185,129,0.05)',
+                            borderRadius: '8px', border: '1px solid rgba(16,185,129,0.15)',
                           }}>
                             <div>
                               <div style={{ fontSize: '12px', fontWeight: 600 }}>
-                                {e.referred_name || shortenWallet(e.referred_wallet)} won
+                                {e.referred_name || shortenWallet(e.referred_wallet)}&nbsp;
+                                <span style={{ color: e.earning_type === 'win' ? '#fbbf24' : '#f87171', fontSize: '10px' }}>
+                                  {e.earning_type === 'win' ? '🏆 won' : '💔 lost'}
+                                </span>
                               </div>
                               <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                {formatDate(e.paid_at)} · Pot ◎{formatSol(e.win_amount)}
+                                {formatDate(e.created_at)} · {e.earning_type === 'win' ? `30% of 5% tax on ◎${formatSol(e.source_amount)}` : `30% of ◎${formatSol(e.source_amount)} bet`}
                               </div>
                             </div>
-                            <div style={{ textAlign: 'right' }}>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
                               <div style={{ fontSize: '13px', fontWeight: 700, color: '#10b981' }}>
                                 +◎{formatSol(e.bonus_amount)}
                               </div>
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>30% bonus</div>
                             </div>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {/* Claim button */}
+                    <button
+                      onClick={handleClaimEarnings}
+                      disabled={claiming || totalUnclaimed === 0 || payoutsPaused}
+                      style={{
+                        width: '100%', padding: '13px', borderRadius: '10px', border: 'none',
+                        cursor: (claiming || totalUnclaimed === 0 || payoutsPaused) ? 'not-allowed' : 'pointer',
+                        background: (claiming || totalUnclaimed === 0 || payoutsPaused)
+                          ? 'rgba(255,255,255,0.05)'
+                          : 'linear-gradient(135deg, #10b981, #059669)',
+                        color: (claiming || totalUnclaimed === 0 || payoutsPaused) ? 'var(--text-muted)' : '#fff',
+                        fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '14px',
+                        letterSpacing: '0.02em',
+                        boxShadow: (claiming || totalUnclaimed === 0 || payoutsPaused) ? 'none' : '0 0 20px rgba(16,185,129,0.3)',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      {claiming ? '⏳ Sending...' : payoutsPaused ? '⏸ Payouts Paused' : totalUnclaimed === 0 ? 'Nothing to Claim' : `🎉 Claim ◎${formatSol(totalUnclaimed)}`}
+                    </button>
+
+                    {/* Claimed history */}
+                    {claimedEarnings.length > 0 && (
+                      <div style={{ marginTop: '18px' }}>
+                        <div style={{ fontFamily: 'var(--font-display)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '8px' }}>
+                          CLAIM HISTORY
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '160px', overflowY: 'auto' }}>
+                          {claimedEarnings.map(e => (
+                            <div key={e.id} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '7px 10px', background: 'rgba(255,255,255,0.02)',
+                              borderRadius: '7px', border: '1px solid var(--border-color)',
+                              opacity: 0.7,
+                            }}>
+                              <div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  {e.referred_name || shortenWallet(e.referred_wallet)}&nbsp;
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                                    {e.earning_type === 'win' ? 'won' : 'lost'}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{formatDate(e.claimed_at || e.created_at)}</div>
+                              </div>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                                ◎{formatSol(e.bonus_amount)} ✓
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

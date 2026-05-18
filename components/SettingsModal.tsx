@@ -30,6 +30,8 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   const [closeGameConfirm, setCloseGameConfirm] = useState(false);
   const [closeGameMsg, setCloseGameMsg] = useState('');
   const [lockedGames, setLockedGames] = useState<string[]>([]);
+  const [referralPayoutsPaused, setReferralPayoutsPaused] = useState(false);
+  const [referralPauseMsg, setReferralPauseMsg] = useState('');
   const [fruitRollAlwaysLose, setFruitRollAlwaysLose] = useState<boolean>(() => {
     try { return localStorage.getItem('mod_fruitroll_always_lose') === 'true'; } catch { return false; }
   });
@@ -218,6 +220,30 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     socket.emit('get_state');
     return () => { socket.off('locked_games', onLockedGames); };
   }, [socket]);
+
+  // Sync referral pause state (mod only)
+  useEffect(() => {
+    if (!socket || wallet !== '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi') return;
+    const onPauseResult = ({ paused }: { success: boolean; paused: boolean }) => {
+      setReferralPayoutsPaused(paused);
+    };
+    const onPayoutsPaused = ({ paused }: { paused: boolean }) => setReferralPayoutsPaused(paused);
+    socket.on('mod_referral_pause_result', onPauseResult);
+    socket.on('referral_payouts_paused', onPayoutsPaused);
+    socket.emit('mod_get_referral_pause', { wallet });
+    return () => {
+      socket.off('mod_referral_pause_result', onPauseResult);
+      socket.off('referral_payouts_paused', onPayoutsPaused);
+    };
+  }, [socket, wallet]);
+
+  const toggleReferralPayoutsPause = () => {
+    if (!socket) return;
+    socket.emit('mod_toggle_referral_pause', { wallet });
+    const next = !referralPayoutsPaused;
+    setReferralPauseMsg(next ? '⏸ Referral payouts paused' : '▶ Referral payouts resumed');
+    setTimeout(() => setReferralPauseMsg(''), 3000);
+  };
 
   const toggleFruitRollAlwaysLose = () => {
     const next = !fruitRollAlwaysLose;
@@ -706,6 +732,53 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
             {closeGameConfirm && (
               <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>
                 Click again to confirm — bets will not be refunded
+              </div>
+            )}
+
+            <div style={{ height: '1px', background: 'rgba(239,68,68,0.15)', margin: '14px 0' }} />
+
+            {/* Pause Referral Payouts */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)', marginBottom: '3px' }}>
+                  Pause Referral Payouts
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  Prevents anyone from claiming referral earnings
+                </div>
+              </div>
+              <div
+                onClick={toggleReferralPayoutsPause}
+                style={{
+                  position: 'relative', width: '44px', height: '24px', borderRadius: '12px',
+                  background: referralPayoutsPaused ? '#ef4444' : 'rgba(255,255,255,0.1)',
+                  border: `1px solid ${referralPayoutsPaused ? '#ef4444' : 'var(--border-color)'}`,
+                  cursor: 'pointer', transition: 'background 0.2s, border-color 0.2s',
+                  flexShrink: 0,
+                  boxShadow: referralPayoutsPaused ? '0 0 10px rgba(239,68,68,0.4)' : 'none',
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: '3px',
+                  left: referralPayoutsPaused ? '23px' : '3px',
+                  width: '16px', height: '16px', borderRadius: '50%',
+                  background: '#fff', transition: 'left 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                }} />
+              </div>
+            </div>
+            {referralPayoutsPaused && (
+              <div style={{
+                marginTop: '10px', padding: '8px 10px',
+                background: 'rgba(239,68,68,0.1)', borderRadius: '8px',
+                fontSize: '11px', color: '#f87171', fontFamily: 'var(--font-display)', fontWeight: 600,
+              }}>
+                ⏸ ACTIVE — Referral claims are blocked
+              </div>
+            )}
+            {referralPauseMsg && (
+              <div style={{ marginTop: '8px', fontSize: '11px', color: referralPayoutsPaused ? '#f87171' : '#10b981', fontFamily: 'var(--font-display)', fontWeight: 600 }}>
+                {referralPauseMsg}
               </div>
             )}
           </div>
