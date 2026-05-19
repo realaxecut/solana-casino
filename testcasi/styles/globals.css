@@ -1,0 +1,182 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'Space Mono', monospace;
+
+  --bg-primary: #0a0500;
+  --bg-secondary: #0e0700;
+  --bg-card: #160b00;
+  --bg-card-hover: #1e1000;
+
+  --orange-glow: #ff6b00;
+  --orange-bright: #ff8c00;
+  --orange-soft: #ffb347;
+  --orange-pale: #ffd9a0;
+
+  --text-primary: #fff8f0;
+  --text-secondary: #c8a070;
+  --text-muted: #6a4a25;
+
+  --border-color: rgba(90,48,0,0.35);
+  --border-bright: rgba(160,90,0,0.5);
+
+  --win-green: #26DE81;
+  --chat-bg: #080400;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-body); height: 100%; overflow: hidden; }
+#__next { height: 100%; }
+
+/* ── Mobile-specific fixes ── */
+@media (max-width: 767px) {
+  html, body { overflow: hidden; position: fixed; width: 100%; }
+  #__next { height: 100vh; }
+
+  /* Wallet button compact on mobile */
+  .wallet-adapter-button {
+    font-size: 11px !important;
+    padding: 8px 12px !important;
+    height: 34px !important;
+  }
+
+  /* Make inputs bigger touch targets on mobile */
+  input[type="number"] {
+    font-size: 16px !important; /* prevents iOS zoom */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Settings modal — full screen on mobile */
+  .wallet-adapter-modal-wrapper {
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 20px 20px 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+  }
+
+  /* Hide desktop nav on mobile (fruitroll/referral pages that don't use the mobile layout system) */
+  .desktop-nav { display: none !important; }
+
+  /* Fruitroll / other pages: make header scroll-safe */
+  header { overflow-x: auto; }
+}
+
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,107,0,0.3); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--orange-glow); }
+
+/* Wallet adapter */
+.wallet-adapter-button {
+  background: linear-gradient(135deg,#cc5500,#ff8c00) !important;
+  border-radius: 9px !important;
+  font-family: var(--font-display) !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  padding: 9px 20px !important;
+  height: auto !important;
+  transition: all 0.2s ease !important;
+}
+.wallet-adapter-button:hover {
+  background: linear-gradient(135deg,#ff8c00,#ffb347) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 20px rgba(255,107,0,0.45) !important;
+}
+.wallet-adapter-button-trigger { background: linear-gradient(135deg,#cc5500,#ff8c00) !important; }
+.wallet-adapter-modal-wrapper { background: #160b00 !important; border: 1px solid rgba(160,90,0,0.4) !important; }
+.wallet-adapter-modal-title { color: var(--text-primary) !important; font-family: var(--font-display) !important; }
+.wallet-adapter-modal-list .wallet-adapter-button { background: rgba(255,107,0,0.08) !important; border: 1px solid rgba(255,107,0,0.15) !important; }
+.wallet-adapter-modal-list .wallet-adapter-button:hover { background: rgba(255,107,0,0.2) !important; }
+
+/* Animations */
+@keyframes pulse-glow { 0%,100%{box-shadow:0 0 20px rgba(255,107,0,0.25)} 50%{box-shadow:0 0 50px rgba(255,107,0,0.55)} }
+@keyframes spin-slow { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes winner-flash { 0%,100%{opacity:1} 50%{opacity:0.5} }
+@keyframes slide-in-left { from{opacity:0;transform:translateX(-20px)} to{opacity:1;transform:translateX(0)} }
+@keyframes slide-in-up { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes spin-jackpot { 0%{transform:rotate(0deg)} 100%{transform:rotate(720deg)} }
+@keyframes confetti-fall { 0%{transform:translateY(-10px) rotate(0deg);opacity:1} 100%{transform:translateY(80px) rotate(360deg);opacity:0} }
+
+.animate-pulse-glow { animation: pulse-glow 2.5s ease-in-out infinite; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+.animate-spin-slow { animation: spin-slow 20s linear infinite; }
+.animate-winner-flash { animation: winner-flash 0.5s ease-in-out infinite; }
+.animate-slide-in-left { animation: slide-in-left 0.3s ease-out forwards; }
+.animate-slide-in-up { animation: slide-in-up 0.3s ease-out forwards; }
+
+.glass-card { background: rgba(22,11,0,0.85); backdrop-filter: blur(16px); border: 1px solid rgba(90,48,0,0.3); }
+.glow-border { border: 1px solid var(--border-bright); box-shadow: inset 0 0 30px rgba(255,107,0,0.04),0 0 0 1px rgba(255,107,0,0.08); }
+.orange-text-glow { text-shadow: 0 0 20px rgba(255,107,0,0.5); }
+
+input[type="text"], input[type="number"], textarea {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input[type="text"]:focus, input[type="number"]:focus, textarea:focus {
+  border-color: var(--orange-glow);
+  box-shadow: 0 0 0 3px rgba(255,107,0,0.1);
+}
+input::placeholder { color: var(--text-muted); }
+
+.btn-orange {
+  background: linear-gradient(135deg,#cc5500,#ff8c00);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  border-radius: 9px;
+  transition: all 0.2s;
+}
+.btn-orange:hover:not(:disabled) {
+  background: linear-gradient(135deg,#ff8c00,#ffb347);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(255,107,0,0.45);
+}
+.btn-orange:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* alias */
+.btn-primary { background: linear-gradient(135deg,#cc5500,#ff8c00); color:#fff; font-family:var(--font-display); font-weight:700; border:none; cursor:pointer; border-radius:9px; transition:all 0.2s; }
+.btn-primary:hover:not(:disabled) { background:linear-gradient(135deg,#ff8c00,#ffb347); transform:translateY(-1px); box-shadow:0 4px 20px rgba(255,107,0,0.45); }
+.btn-primary:disabled { opacity:0.35; cursor:not-allowed; }
+
+.pie-segment { transition: all 0.2s ease; cursor: pointer; }
+.pie-segment:hover { filter: brightness(1.2); }
+
+/* Recent round winner fade-in + slide-down animation */
+@keyframes recentRoundIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Page transition */
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-transition {
+  animation: page-fade-in 0.22s ease-out forwards;
+}
