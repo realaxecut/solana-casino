@@ -98,49 +98,30 @@ export default function FruitRoll() {
   const potentialPayoutSol = (potentialPayout / LAMPORTS_PER_SOL).toFixed(4);
   const multiplier = (fruitCount * (1 - HOUSE_EDGE)).toFixed(2);
 
-  // ── Mod flags (read from localStorage — set in SettingsModal) ────────────
-  const isPropMoney = (() => { try { return localStorage.getItem('mod_fruitflip_prop_money') === 'true'; } catch { return false; } })();
-  const isXpOnly = (() => { try { return localStorage.getItem('mod_fruitflip_xp_only') === 'true'; } catch { return false; } })();
+  // ── Mod flags (server-authoritative — set via SettingsModal socket events) ─
+  const [isPropMoney, setIsPropMoney] = useState(false);
+  const [isXpOnly, setIsXpOnly] = useState(false);
+  const [modAlwaysLose, setModAlwaysLose] = useState(false);
 
   // ── Daily crate ──────────────────────────────────────────────────────────
   // Odds mirroring the SolPump Starter case from screenshot
-  const CRATE_PRIZES = isXpOnly
-    ? [
-        { label: '500 XP',   xp: 500,  chance: 94.934698 },
-        { label: '2500 XP',  xp: 2500, chance: 5 },
-        { label: '5000 XP',  xp: 5000, chance: 0.05 },
-        { label: '10000 XP', xp: 10000,chance: 0.01 },
-        { label: '25000 XP', xp: 25000,chance: 0.005 },
-        { label: '1 SOL XP', xp: 50000,chance: 0.0003 },
-        { label: 'JACKPOT XP',xp:100000,chance: 0.000001 },
-        { label: 'MEGA XP',  xp:250000,chance: 0.000001 },
-      ]
-    : [
-        { label: '500 XP',   xp: 500,  sol: 0,      chance: 94.934698 },
-        { label: '0.001 SOL',xp: 0,    sol: 0.001,  chance: 5 },
-        { label: '0.005 SOL',xp: 0,    sol: 0.005,  chance: 0.05 },
-        { label: '0.02 SOL', xp: 0,    sol: 0.02,   chance: 0.01 },
-        { label: '0.1 SOL',  xp: 0,    sol: 0.1,    chance: 0.005 },
-        { label: '1 SOL',    xp: 0,    sol: 1,       chance: 0.0003 },
-        { label: '2.5 SOL',  xp: 0,    sol: 2.5,    chance: 0.000001 },
-        { label: '10 SOL',   xp: 0,    sol: 10,     chance: 0.000001 },
-      ];
+  // Normal mode: SOL prizes + one XP consolation prize (index 0 = XP, rest = SOL)
+  // XP mode: same prizes but the 95% slot (index 0) is always forced to win
+  const CRATE_PRIZES = [
+    { label: '500 XP',   xp: 500,  sol: 0,      chance: 94.934698 },
+    { label: '0.001 SOL',xp: 0,    sol: 0.001,  chance: 5 },
+    { label: '0.005 SOL',xp: 0,    sol: 0.005,  chance: 0.05 },
+    { label: '0.02 SOL', xp: 0,    sol: 0.02,   chance: 0.01 },
+    { label: '0.1 SOL',  xp: 0,    sol: 0.1,    chance: 0.005 },
+    { label: '1 SOL',    xp: 0,    sol: 1,       chance: 0.0003 },
+    { label: '2.5 SOL',  xp: 0,    sol: 2.5,    chance: 0.000001 },
+    { label: '10 SOL',   xp: 0,    sol: 10,     chance: 0.000001 },
+  ];
 
   const CRATE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-  const getCrateState = () => {
-    if (!wallet) return { available: false, nextAt: 0 };
-    try {
-      const raw = localStorage.getItem(`daily_crate_${wallet}`);
-      if (!raw) return { available: true, nextAt: 0 };
-      const { lastOpened } = JSON.parse(raw);
-      const nextAt = lastOpened + CRATE_COOLDOWN_MS;
-      return { available: Date.now() >= nextAt, nextAt };
-    } catch { return { available: true, nextAt: 0 }; }
-  };
-
-  const [crateAvailable, setCrateAvailable] = useState(() => getCrateState().available);
-  const [crateNextAt, setCrateNextAt] = useState(() => getCrateState().nextAt);
+  const [crateAvailable, setCrateAvailable] = useState(false);
+  const [crateNextAt, setCrateNextAt] = useState(0);
   const [crateOpening, setCrateOpening] = useState(false);
   const [crateResult, setCrateResult] = useState<{ label: string; xp: number; sol: number } | null>(null);
   const [crateTimeLeft, setCrateTimeLeft] = useState('');
@@ -240,23 +221,22 @@ export default function FruitRoll() {
   // ── Crate countdown ticker ────────────────────────────────────────────────
   useEffect(() => {
     const tick = () => {
-      const { available, nextAt } = getCrateState();
-      setCrateAvailable(available);
-      setCrateNextAt(nextAt);
-      if (!available && nextAt > 0) {
-        const ms = Math.max(0, nextAt - Date.now());
-        const h = Math.floor(ms / 3600000);
-        const m = Math.floor((ms % 3600000) / 60000);
-        const s = Math.floor((ms % 60000) / 1000);
-        setCrateTimeLeft(`${h}h ${m}m ${s}s`);
-      } else {
+      if (!crateNextAt) { setCrateTimeLeft(''); return; }
+      const ms = Math.max(0, crateNextAt - Date.now());
+      if (ms === 0) {
+        setCrateAvailable(true);
         setCrateTimeLeft('');
+        return;
       }
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      setCrateTimeLeft(`${h}h ${m}m ${s}s`);
     };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [wallet]);
+  }, [crateNextAt]);
 
   // When winner is determined, settle result
   useEffect(() => {
@@ -296,14 +276,6 @@ export default function FruitRoll() {
       if (res.success && res.claimId) {
         setClaimId(res.claimId);
         setClaimState('ready');
-        // Persist locally in case page refreshes before claim
-        if (wallet) {
-          try {
-            const pending = JSON.parse(localStorage.getItem(`fr_pending_claim_${wallet}`) || '{}');
-            pending[res.claimId] = { payoutLamports: res.payoutLamports, registeredAt: Date.now() };
-            localStorage.setItem(`fr_pending_claim_${wallet}`, JSON.stringify(pending));
-          } catch {}
-        }
       } else {
         setClaimState('error');
         setClaimError(res.error || 'Failed to register win — please try claiming from Settings');
@@ -324,8 +296,59 @@ export default function FruitRoll() {
     s.on('unclaimed_wins', (data: { items: any[]; totalLamports: number }) => {
       setUnclaimedTotal(data.totalLamports || 0);
     });
+    // Server-authoritative crate state
+    s.on('crate_state', (res: { available: boolean; nextAt: number }) => {
+      setCrateAvailable(res.available);
+      setCrateNextAt(res.nextAt || 0);
+    });
+    s.on('crate_result', (res: { success: boolean; prizeIdx?: number; prize?: any; nextAt?: number; error?: string }) => {
+      if (res.success && res.prize != null) {
+        // Carousel: animate to the server-determined prize index
+        const ITEM_W = 110;
+        const STRIP_REPEATS = 8;
+        const targetItem = CRATE_PRIZES.length * 5 + (res.prizeIdx ?? 0);
+        const targetOffset = targetItem * ITEM_W;
+        const nudge = Math.floor(Math.random() * 30) - 15;
+        const finalOffset = targetOffset + nudge;
+        const duration = 3200;
+        const start = performance.now();
+        const startOffset = 0;
+        const animate = (now: number) => {
+          const elapsed = now - start;
+          const t = Math.min(elapsed / duration, 1);
+          const ease = 1 - Math.pow(1 - t, 3);
+          const current = startOffset + (finalOffset - startOffset) * ease;
+          setCrateCarouselOffset(current);
+          if (t < 1) {
+            crateAnimRef.current = requestAnimationFrame(animate);
+          } else {
+            setCrateCarouselOffset(finalOffset);
+            setCrateSpinning(false);
+            const result = { label: res.prize.label, xp: res.prize.xp || 0, sol: res.prize.sol || 0 };
+            setCrateSpinResult(result);
+            setCrateResult(result);
+            setCrateAvailable(false);
+            setCrateNextAt(res.nextAt || 0);
+          }
+        };
+        crateAnimRef.current = requestAnimationFrame(animate);
+      } else {
+        setCrateSpinning(false);
+        if (res.nextAt) { setCrateAvailable(false); setCrateNextAt(res.nextAt); }
+      }
+    });
+    // Server-authoritative mod flags
+    s.on('mod_fruitroll_flags', (flags: { alwaysLose: boolean; propMoney: boolean; xpOnly: boolean }) => {
+      setModAlwaysLose(flags.alwaysLose);
+      setIsPropMoney(flags.propMoney);
+      setIsXpOnly(flags.xpOnly);
+    });
     s.emit('get_state');
-    if (wallet) s.emit('get_unclaimed_wins', { wallet });
+    if (wallet) {
+      s.emit('get_unclaimed_wins', { wallet });
+      s.emit('get_crate_state', { wallet });
+      s.emit('get_mod_fruitroll_flags', { wallet });
+    }
     setSocket(s);
     return () => { s.disconnect(); };
   }, [wallet]);
@@ -340,11 +363,12 @@ export default function FruitRoll() {
     if (isNaN(sol) || sol < 0.001) { setBetError('Minimum bet is 0.001 SOL'); return; }
     if (phase !== 'idle') { setBetError('Race already in progress!'); return; }
 
-    // ── Prop Money mode: skip real transaction ──────────────────────────────
-    if (isPropMoney) {
+    // ── Prop Money mode: mod-only — skip real transaction ──────────────────
+    const MOD_WALLET = '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi';
+    if (isPropMoney && wallet === MOD_WALLET) {
       setBetLoading(true);
       currentBetSigRef.current = 'prop_money_' + Date.now();
-      const alwaysLose = (() => { try { return localStorage.getItem('mod_fruitroll_always_lose') === 'true'; } catch { return false; } })();
+      const alwaysLose = modAlwaysLose;
       let determinedWinner: string;
       if (alwaysLose) {
         const losers = selectedFruits.filter(f => f.id !== pickedFruit);
@@ -424,7 +448,7 @@ export default function FruitRoll() {
       currentBetSigRef.current = sig;
 
       // Determine winner — check mod override first
-      const alwaysLose = (() => { try { return localStorage.getItem('mod_fruitroll_always_lose') === 'true'; } catch { return false; } })();
+      const alwaysLose = modAlwaysLose;
       let determinedWinner: string;
       if (alwaysLose) {
         // Mod override: always pick a non-picked fruit
@@ -453,61 +477,12 @@ export default function FruitRoll() {
   };
 
   const openCrate = () => {
-    if (!crateAvailable || crateSpinning || !wallet) return;
+    if (!crateAvailable || crateSpinning || !wallet || !socket) return;
     setCrateSpinning(true);
     setCrateSpinResult(null);
-
-    // Roll the prize
-    const rand = Math.random() * 100;
-    let cumulative = 0;
-    let prizeIdx = 0;
-    for (let i = 0; i < CRATE_PRIZES.length; i++) {
-      cumulative += CRATE_PRIZES[i].chance;
-      if (rand <= cumulative) { prizeIdx = i; break; }
-    }
-    const prize = CRATE_PRIZES[prizeIdx];
-
-    // Carousel: ITEM_W px per item. We'll tile prizes in a long strip.
-    // Target: land prizeIdx item in center after spin.
-    const ITEM_W = 110;
-    const STRIP_REPEATS = 8; // repeat prizes 8× for a long strip
-    const TOTAL_ITEMS = CRATE_PRIZES.length * STRIP_REPEATS;
-    // Land on prizeIdx in the 6th repeat (middle-ish)
-    const targetItem = CRATE_PRIZES.length * 5 + prizeIdx;
-    const targetOffset = targetItem * ITEM_W;
-    // Add a small sub-item offset so it lands slightly off-center (authentic feel)
-    const nudge = Math.floor(Math.random() * 30) - 15;
-    const finalOffset = targetOffset + nudge;
-
-    // Animate: ease-out over ~3 seconds
-    const duration = 3200;
-    const start = performance.now();
-    const startOffset = crateCarouselOffset % (CRATE_PRIZES.length * ITEM_W); // start from current mod
-
-    const animate = (now: number) => {
-      const elapsed = now - start;
-      const t = Math.min(elapsed / duration, 1);
-      // Ease out cubic
-      const ease = 1 - Math.pow(1 - t, 3);
-      const current = startOffset + (finalOffset - startOffset) * ease;
-      setCrateCarouselOffset(current);
-
-      if (t < 1) {
-        crateAnimRef.current = requestAnimationFrame(animate);
-      } else {
-        setCrateCarouselOffset(finalOffset);
-        setCrateSpinning(false);
-        const result = { label: prize.label, xp: (prize as any).xp || 0, sol: (prize as any).sol || 0 };
-        setCrateSpinResult(result);
-        setCrateResult(result);
-        // Save cooldown
-        try {
-          localStorage.setItem(`daily_crate_${wallet}`, JSON.stringify({ lastOpened: Date.now() }));
-        } catch {}
-        setCrateAvailable(false);
-      }
-    };
-    crateAnimRef.current = requestAnimationFrame(animate);
+    // Send prizes to server so it can roll and validate
+    socket.emit('open_daily_crate', { wallet, prizes: CRATE_PRIZES.map(p => ({ label: p.label, xp: (p as any).xp || 0, sol: (p as any).sol || 0, chance: p.chance })) });
+    // crate_result listener (set up in socket useEffect) will handle animation and state updates
   };
 
   const resetGame = () => {
@@ -687,8 +662,8 @@ export default function FruitRoll() {
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Pick a fruit · Watch the race · Win big</div>
             </div>
 
-            {/* Prop Money banner */}
-            {isPropMoney && (
+            {/* Prop Money banner — mod only */}
+            {isPropMoney && wallet === '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi' && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '10px 14px',
@@ -829,7 +804,7 @@ export default function FruitRoll() {
                     letterSpacing: '0.05em',
                   }}
                 >
-                  {isGameLocked ? '🔒 Game Locked' : betLoading ? '⏳ Confirming...' : isPropMoney ? `💵 Roll (Prop Money)` : `🎰 Roll It!`}
+                  {isGameLocked ? '🔒 Game Locked' : betLoading ? '⏳ Confirming...' : (isPropMoney && wallet === '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi') ? `💵 Roll (Prop Money)` : `🎰 Roll It!`}
                 </button>
               )
             ) : phase === 'result' ? (
@@ -1365,7 +1340,7 @@ export default function FruitRoll() {
                     transition: 'all 0.2s',
                   }}
                 >
-                  {crateSpinning ? '⏳ Spinning...' : crateAvailable ? '🎰 SPIN' : `⏳ Next crate in ${crateTimeLeft}`}
+                  {crateSpinning ? '⏳ Spinning...' : crateAvailable ? '🎁 Daily Crate' : `⏳ ${crateTimeLeft}`}
                 </button>
 
                 {/* Odds table */}

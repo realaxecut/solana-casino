@@ -32,15 +32,9 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   const [lockedGames, setLockedGames] = useState<string[]>([]);
   const [referralPayoutsPaused, setReferralPayoutsPaused] = useState(false);
   const [referralPauseMsg, setReferralPauseMsg] = useState('');
-  const [fruitRollAlwaysLose, setFruitRollAlwaysLose] = useState<boolean>(() => {
-    try { return localStorage.getItem('mod_fruitroll_always_lose') === 'true'; } catch { return false; }
-  });
-  const [fruitFlipPropMoney, setFruitFlipPropMoney] = useState<boolean>(() => {
-    try { return localStorage.getItem('mod_fruitflip_prop_money') === 'true'; } catch { return false; }
-  });
-  const [fruitFlipXpOnly, setFruitFlipXpOnly] = useState<boolean>(() => {
-    try { return localStorage.getItem('mod_fruitflip_xp_only') === 'true'; } catch { return false; }
-  });
+  const [fruitRollAlwaysLose, setFruitRollAlwaysLose] = useState<boolean>(false);
+  const [fruitFlipPropMoney, setFruitFlipPropMoney] = useState<boolean>(false);
+  const [fruitFlipXpOnly, setFruitFlipXpOnly] = useState<boolean>(false);
   const [unclaimedWins, setUnclaimedWins] = useState<{id: string; game_type: string; amount: number; created_at: number; fruit_count?: number}[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [claimResults, setClaimResults] = useState<Record<string, {tx?: string; error?: string; success?: boolean}>>({});
@@ -243,6 +237,19 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     };
   }, [socket, wallet]);
 
+  // Fetch server-authoritative mod flags
+  useEffect(() => {
+    if (!socket || wallet !== '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi') return;
+    const onFlags = (flags: { alwaysLose: boolean; propMoney: boolean; xpOnly: boolean }) => {
+      setFruitRollAlwaysLose(flags.alwaysLose);
+      setFruitFlipPropMoney(flags.propMoney);
+      setFruitFlipXpOnly(flags.xpOnly);
+    };
+    socket.on('mod_fruitroll_flags', onFlags);
+    socket.emit('get_mod_fruitroll_flags', { wallet });
+    return () => { socket.off('mod_fruitroll_flags', onFlags); };
+  }, [socket, wallet]);
+
   const toggleReferralPayoutsPause = () => {
     if (!socket) return;
     socket.emit('mod_toggle_referral_pause', { wallet });
@@ -252,21 +259,24 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   };
 
   const toggleFruitRollAlwaysLose = () => {
+    if (!socket) return;
     const next = !fruitRollAlwaysLose;
     setFruitRollAlwaysLose(next);
-    try { localStorage.setItem('mod_fruitroll_always_lose', String(next)); } catch {}
+    socket.emit('mod_set_fruitroll_always_lose', { wallet, value: next });
   };
 
   const toggleFruitFlipPropMoney = () => {
+    if (!socket) return;
     const next = !fruitFlipPropMoney;
     setFruitFlipPropMoney(next);
-    try { localStorage.setItem('mod_fruitflip_prop_money', String(next)); } catch {}
+    socket.emit('mod_set_fruitflip_prop_money', { wallet, value: next });
   };
 
   const toggleFruitFlipXpOnly = () => {
+    if (!socket) return;
     const next = !fruitFlipXpOnly;
     setFruitFlipXpOnly(next);
-    try { localStorage.setItem('mod_fruitflip_xp_only', String(next)); } catch {}
+    socket.emit('mod_set_fruitflip_xp_only', { wallet, value: next });
   };
 
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSave(); };
