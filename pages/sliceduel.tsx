@@ -138,9 +138,11 @@ export default function SliceDuel() {
   const [finalScore, setFinalScore] = useState(0);
   const [finalOpponentScore, setFinalOpponentScore] = useState(0);
   const [payoutAmount, setPayoutAmount] = useState(0);
-  const [claimState, setClaimState] = useState<'idle' | 'claiming' | 'success' | 'error'>('idle');
-  const [claimTx, setClaimTx] = useState('');
+  const [claimId, setClaimId] = useState<string | null>(null);
+  const [claimState, setClaimState] = useState<'registering' | 'ready' | 'claiming' | 'success' | 'error' | null>(null);
+  const [claimTx, setClaimTx] = useState<string | null>(null);
   const [claimError, setClaimError] = useState('');
+  const claimInFlight = useRef(false);
 
   // ── Misc ─────────────────────────────────────────────────────────────────
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -236,7 +238,7 @@ export default function SliceDuel() {
     });
     s.on('sliceduel_opponent_score', (data: { score: number }) => setOpponentScore(data.score));
     s.on('sliceduel_result', (data: {
-      winnerWallet: string; yourScore: number; opponentScore: number; payoutLamports: number; isTestCash?: boolean;
+      winnerWallet: string; yourScore: number; opponentScore: number; payoutLamports: number; claimId?: string | null; isTestCash?: boolean;
     }) => endGame(data));
     s.on('sliceduel_lobby_expired', () => {
       clearLobbyCountdown();
@@ -745,13 +747,24 @@ export default function SliceDuel() {
     }
   }, []);
 
-  const endGame = useCallback((data: { winnerWallet: string; yourScore: number; opponentScore: number; payoutLamports: number }) => {
+  const endGame = useCallback((data: { winnerWallet: string; yourScore: number; opponentScore: number; payoutLamports: number; claimId?: string | null }) => {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (spawnTimerRef.current) { clearInterval(spawnTimerRef.current); spawnTimerRef.current = null; }
-    setPlayerWon(data.winnerWallet === walletRef.current);
+    const won = data.winnerWallet === walletRef.current;
+    setPlayerWon(won);
     setFinalScore(data.yourScore);
     setFinalOpponentScore(data.opponentScore);
     setPayoutAmount(data.payoutLamports);
+    claimInFlight.current = false;
+    if (won && data.payoutLamports > 0 && data.claimId) {
+      setClaimId(data.claimId);
+      setClaimState('ready');
+    } else if (won && data.payoutLamports > 0 && !data.claimId) {
+      setClaimState('error');
+      setClaimError('Claim not ready — check Settings → Unclaimed Winnings');
+    } else {
+      setClaimState(null);
+    }
     setPhase('result');
   }, []);
 
@@ -926,19 +939,29 @@ export default function SliceDuel() {
 
   // ── Claim / Reset ────────────────────────────────────────────────────────
   const handleClaim = () => {
-    if (!socket || !wallet || claimState === 'claiming') return;
+    if (claimInFlight.current || claimState === 'claiming' || !claimId || !socket || !wallet) return;
+    claimInFlight.current = true;
     setClaimState('claiming');
-    socket.emit('sliceduel_claim_payout', { matchId: matchIdRef.current, wallet });
-    socket.once('sliceduel_claim_result', (res: { success: boolean; tx?: string; error?: string }) => {
-      if (res.success) { setClaimState('success'); setClaimTx(res.tx || ''); }
-      else { setClaimState('error'); setClaimError(res.error || 'Claim failed.'); }
+    setClaimError('');
+    socket.emit('claim_payout', { wallet, roundId: claimId });
+    socket.once('claim_result', (res: { success: boolean; claimTx?: string; error?: string; alreadyClaimed?: boolean }) => {
+      claimInFlight.current = false;
+      if (res.success || res.alreadyClaimed) {
+        setClaimState('success');
+        setClaimTx(res.claimTx || null);
+        socket.emit('get_unclaimed_wins', { wallet });
+      } else {
+        setClaimState('error');
+        setClaimError(res.error || 'Claim failed — please try again');
+      }
     });
   };
 
   const resetToLobby = () => {
     setPhase('lobby'); setMyLobby(null); setMatchedLobby(null);
     setScore(0); setOpponentScore(0); setCombo(0);
-    setClaimState('idle'); setClaimTx(''); setClaimError('');
+    setClaimId(null); setClaimState(null); setClaimTx(null); setClaimError('');
+    claimInFlight.current = false;
     matchIdRef.current = null; betTxSigRef.current = null;
     fruitsRef.current = []; particlesRef.current = []; trailRef.current = [];
     if (socket && wallet) socket.emit('sliceduel_get_lobbies');
@@ -1169,17 +1192,51 @@ export default function SliceDuel() {
                   {playerWon && payoutAmount > 0 && (
                     <div style={{ marginBottom: '16px' }}>
                       {claimState === 'success' ? (
-                        <div style={{ padding: '12px', background: 'rgba(72,187,120,0.12)', border: '1px solid rgba(72,187,120,0.4)', borderRadius: '12px' }}>
-                          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '14px', color: '#48bb78', marginBottom: '4px' }}>✅ Prize Sent!</div>
-                          {claimTx && <a href={`https://explorer.solana.com/tx/${claimTx}`} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#48bb78', textDecoration: 'underline', fontFamily: 'Space Mono, monospace' }}>View on Explorer ↗</a>}
+                        <div style={{ padding: '14px', background: 'rgba(72,187,120,0.12)', border: '1px solid rgba(72,187,120,0.4)', borderRadius: '12px', marginBottom: '10px' }}>
+                          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '15px', color: '#48bb78', marginBottom: '4px' }}>✅ Prize Sent!</div>
+                          {claimTx && (
+                            <a href={`https://explorer.solana.com/tx/${claimTx}`} target="_blank" rel="noreferrer"
+                              style={{ fontSize: '11px', color: '#48bb78', textDecoration: 'underline', fontFamily: 'Space Mono, monospace' }}>
+                              View on Explorer ↗
+                            </a>
+                          )}
                         </div>
                       ) : (
-                        <button onClick={handleClaim} disabled={claimState === 'claiming'}
-                          style={{ display: 'block', width: '100%', padding: '14px', borderRadius: '12px', border: 'none', background: claimState === 'claiming' ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg,#48bb78,#38a169)', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '16px', cursor: claimState === 'claiming' ? 'not-allowed' : 'pointer', boxShadow: claimState !== 'claiming' ? '0 0 28px rgba(72,187,120,0.4)' : 'none', letterSpacing: '0.04em' }}>
-                          {claimState === 'claiming' ? '⏳ Sending...' : `💰 Claim ${fmtSol(payoutAmount)} SOL`}
+                        <button
+                          onClick={handleClaim}
+                          disabled={!claimId || claimState === 'claiming'}
+                          style={{
+                            display: 'block', width: '100%', padding: '16px',
+                            borderRadius: '12px', border: 'none',
+                            cursor: (!claimId || claimState === 'claiming') ? 'not-allowed' : 'pointer',
+                            background: (!claimId || claimState === 'claiming')
+                              ? 'rgba(255,255,255,0.08)'
+                              : 'linear-gradient(135deg,#48bb78,#38a169)',
+                            color: '#fff',
+                            fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '17px',
+                            letterSpacing: '0.04em',
+                            boxShadow: claimId && claimState === 'ready' ? '0 0 28px rgba(72,187,120,0.45)' : 'none',
+                            transition: 'all 0.2s',
+                            opacity: (!claimId || claimState === 'claiming') ? 0.65 : 1,
+                            marginBottom: '8px',
+                          }}
+                        >
+                          {claimState === 'claiming' ? '⏳ Sending...' :
+                           claimState === 'error' ? '💰 Retry Claim' :
+                           claimId ? `💰 Claim ${fmtSol(payoutAmount)} SOL` :
+                           '⏳ Preparing claim...'}
                         </button>
                       )}
-                      {claimState === 'error' && <div style={{ marginTop: '6px', padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', fontSize: '11px', color: '#f87171' }}>{claimError}</div>}
+                      {claimState === 'error' && claimError && (
+                        <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', fontSize: '11px', color: '#f87171', marginTop: '6px' }}>
+                          {claimError}
+                        </div>
+                      )}
+                      {!claimId && claimState !== 'error' && (
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                          If claim doesn't appear, check Settings → Unclaimed Winnings
+                        </div>
+                      )}
                     </div>
                   )}
                   <button onClick={resetToLobby} style={{ padding: '14px 40px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg,#c53030,#e53e3e)', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '15px', cursor: 'pointer', letterSpacing: '0.05em' }}>🔄 Play Again</button>
@@ -1258,8 +1315,6 @@ export default function SliceDuel() {
                     <div style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, fontSize: '20px', color: timeLeft <= 10 ? '#f87171' : 'rgba(255,255,255,0.7)', textShadow: timeLeft <= 10 ? '0 0 14px rgba(248,113,113,0.8)' : 'none' }}>{fmtTime(timeLeft)}</div>
                   </div>
                   <div style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 5, textAlign: 'right', pointerEvents: 'none' }}>
-                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '32px', color: '#48bb78', lineHeight: 1, textShadow: '0 0 20px rgba(72,187,120,0.5)' }}>{opponentScore}</div>
-                    <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', fontFamily: 'var(--font-display)', fontWeight: 700 }}>OPPONENT</div>
                   </div>
                   {combo >= 3 && (
                     <div style={{ position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', zIndex: 6, textAlign: 'center', pointerEvents: 'none' }}>
