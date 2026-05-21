@@ -150,6 +150,7 @@ export default function SliceDuel() {
   const [showSettings, setShowSettings] = useState(false);
   const [unclaimedTotal, setUnclaimedTotal] = useState(0);
   const [isGameLocked, setIsGameLocked] = useState(false);
+  // Only received as true by mods — server gatekeeps the mod_fruitroll_flags event
   const [sliceDuelTestCash, setSliceDuelTestCash] = useState(false);
 
   // ── Canvas & game refs ───────────────────────────────────────────────────
@@ -289,6 +290,9 @@ export default function SliceDuel() {
     if (isNaN(sol) || sol < 0.001) { setBetError('Minimum wager is 0.001 SOL'); return; }
     setBetLoading(true);
 
+    if (!HOUSE_WALLET) { setBetError('House wallet not configured.'); setBetLoading(false); return; }
+
+    // Mods with test cash active skip the real SOL transfer — server verifies mod status independently
     if (sliceDuelTestCash) {
       const lamports = Math.floor(sol * LAMPORTS_PER_SOL);
       betTxSigRef.current = 'TEST_CASH';
@@ -297,8 +301,6 @@ export default function SliceDuel() {
       setBetLoading(false);
       return;
     }
-
-    if (!HOUSE_WALLET) { setBetError('House wallet not configured.'); setBetLoading(false); return; }
     try {
       const lamports = Math.floor(sol * LAMPORTS_PER_SOL);
       const balance = await connection.getBalance(publicKey);
@@ -332,7 +334,8 @@ export default function SliceDuel() {
     if (!wallet || !publicKey || !socket) return;
     setJoinLoading(lobby.id); setBetError('');
 
-    if (lobby.isTestCash) {
+    // Mods joining their own test cash lobby skip payment — server verifies mod status independently
+    if (lobby.isTestCash && sliceDuelTestCash) {
       betTxSigRef.current = 'TEST_CASH';
       wagerLamportsRef.current = lobby.wagerLamports;
       socket.emit('sliceduel_join_lobby', { lobbyId: lobby.id, wallet, displayName: displayName || wallet.slice(0, 8), txSignature: 'TEST_CASH' });
@@ -1037,9 +1040,6 @@ export default function SliceDuel() {
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px' }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.12em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   SET WAGER
-                  {sliceDuelTestCash && (
-                    <span style={{ background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.4)', color: '#22d3ee', fontSize: '9px', padding: '2px 7px', borderRadius: '5px', letterSpacing: '0.08em', fontWeight: 700 }}>🧪 TEST CASH</span>
-                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0 14px', height: '46px', gap: '10px', marginBottom: '8px' }}>
                   <span style={{ fontSize: '18px' }}>🔪</span>
@@ -1072,7 +1072,7 @@ export default function SliceDuel() {
                 ) : (
                   <button onClick={handleCreateLobby} disabled={betLoading || isGameLocked || !wagerInput}
                     style={{ width: '100%', height: '48px', borderRadius: '10px', border: 'none', background: (betLoading || !wagerInput) ? 'rgba(255,255,255,0.07)' : 'linear-gradient(135deg,#c53030,#e53e3e)', color: '#fff', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '15px', cursor: (betLoading || !wagerInput || isGameLocked) ? 'not-allowed' : 'pointer', opacity: (!wagerInput || isGameLocked) ? 0.5 : 1, letterSpacing: '0.05em', transition: 'all 0.2s', boxShadow: wagerInput ? '0 4px 20px rgba(229,62,62,0.4)' : 'none' }}>
-                    {betLoading ? '⏳ Confirming...' : sliceDuelTestCash ? '🧪 Create Test Lobby' : '🔪 Create Lobby'}
+                    {betLoading ? '⏳ Confirming...' : '🔪 Create Lobby'}
                   </button>
                 )}
               </div>

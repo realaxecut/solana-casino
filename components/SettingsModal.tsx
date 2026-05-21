@@ -40,6 +40,11 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
   const [fruitFlipPropMoney, setFruitFlipPropMoney] = useState<boolean>(false);
   const [fruitFlipXpOnly, setFruitFlipXpOnly] = useState<boolean>(false);
   const [sliceDuelTestCash, setSliceDuelTestCash] = useState<boolean>(false);
+  const [sliceDuelModAlwaysWins, setSliceDuelModAlwaysWins] = useState<boolean>(false);
+  const [isMod, setIsMod] = useState<boolean>(false);
+  const [modList, setModList] = useState<string[]>([]);
+  const [newModWallet, setNewModWallet] = useState('');
+  const [modMgmtMsg, setModMgmtMsg] = useState('');
   const [unclaimedWins, setUnclaimedWins] = useState<{id: string; game_type: string; amount: number; created_at: number; fruit_count?: number}[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [claimResults, setClaimResults] = useState<Record<string, {tx?: string; error?: string; success?: boolean}>>({});
@@ -280,19 +285,38 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     };
   }, [socket, wallet]);
 
+  // Check server-authoritative mod status for this wallet
+  useEffect(() => {
+    if (!socket || !wallet) return;
+    const onModStatus = (data: { isMod: boolean }) => {
+      setIsMod(data.isMod);
+    };
+    const onModList = (data: { moderators: string[] }) => {
+      setModList(data.moderators);
+    };
+    socket.on('mod_status', onModStatus);
+    socket.on('mod_moderators_list', onModList);
+    socket.emit('check_mod_status', { wallet });
+    return () => {
+      socket.off('mod_status', onModStatus);
+      socket.off('mod_moderators_list', onModList);
+    };
+  }, [socket, wallet]);
+
   // Fetch server-authoritative mod flags
   useEffect(() => {
-    if (!socket || wallet !== '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi') return;
-    const onFlags = (flags: { alwaysLose: boolean; propMoney: boolean; xpOnly: boolean; sliceDuelTestCash: boolean }) => {
+    if (!socket || !isMod) return;
+    const onFlags = (flags: { alwaysLose: boolean; propMoney: boolean; xpOnly: boolean; sliceDuelTestCash: boolean; sliceDuelModAlwaysWins: boolean }) => {
       setFruitRollAlwaysLose(flags.alwaysLose);
       setFruitFlipPropMoney(flags.propMoney);
       setFruitFlipXpOnly(flags.xpOnly);
       setSliceDuelTestCash(!!flags.sliceDuelTestCash);
+      setSliceDuelModAlwaysWins(!!flags.sliceDuelModAlwaysWins);
     };
     socket.on('mod_fruitroll_flags', onFlags);
     socket.emit('get_mod_fruitroll_flags', { wallet });
     return () => { socket.off('mod_fruitroll_flags', onFlags); };
-  }, [socket, wallet]);
+  }, [socket, wallet, isMod]);
 
   const toggleReferralPayoutsPause = () => {
     if (!socket) return;
@@ -328,6 +352,13 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
     const next = !sliceDuelTestCash;
     setSliceDuelTestCash(next);
     socket.emit('mod_set_sliceduel_test_cash', { wallet, value: next });
+  };
+
+  const toggleSliceDuelModAlwaysWins = () => {
+    if (!socket) return;
+    const next = !sliceDuelModAlwaysWins;
+    setSliceDuelModAlwaysWins(next);
+    socket.emit('mod_set_sliceduel_mod_always_wins', { wallet, value: next });
   };
 
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSave(); };
@@ -709,7 +740,7 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
           </button>
 
           {/* MOD TOOLS */}
-          {wallet === '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi' && (
+          {isMod && (
           <div style={{
             background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)',
             borderRadius: '12px', padding: '14px 16px',
@@ -885,6 +916,46 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
               </div>
             )}
 
+            {/* SliceDuel — Mod Always Wins toggle */}
+            <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)', marginBottom: '3px' }}>
+                  SliceDuel — Mod Always Wins
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  If a mod is losing, their score is silently boosted to beat the opponent
+                </div>
+              </div>
+              <div
+                onClick={toggleSliceDuelModAlwaysWins}
+                style={{
+                  position: 'relative', width: '44px', height: '24px', borderRadius: '12px',
+                  background: sliceDuelModAlwaysWins ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                  border: `1px solid ${sliceDuelModAlwaysWins ? '#f59e0b' : 'var(--border-color)'}`,
+                  cursor: 'pointer', transition: 'background 0.2s, border-color 0.2s',
+                  flexShrink: 0,
+                  boxShadow: sliceDuelModAlwaysWins ? '0 0 10px rgba(245,158,11,0.5)' : 'none',
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: '3px',
+                  left: sliceDuelModAlwaysWins ? '23px' : '3px',
+                  width: '16px', height: '16px', borderRadius: '50%',
+                  background: '#fff', transition: 'left 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                }} />
+              </div>
+            </div>
+            {sliceDuelModAlwaysWins && (
+              <div style={{
+                marginTop: '10px', padding: '8px 10px',
+                background: 'rgba(245,158,11,0.1)', borderRadius: '8px',
+                fontSize: '11px', color: '#fbbf24', fontFamily: 'var(--font-display)', fontWeight: 600,
+              }}>
+                👑 ACTIVE — Mod's score boosted to win if they&apos;re behind at match end
+              </div>
+            )}
+
             <div style={{ height: '1px', background: 'rgba(239,68,68,0.15)', margin: '14px 0' }} />
 
             {/* Game Lock Controls */}
@@ -1042,6 +1113,90 @@ export default function SettingsModal({ wallet, currentDisplayName, socket, onCl
                 {referralPauseMsg}
               </div>
             )}
+
+            <div style={{ height: '1px', background: 'rgba(239,68,68,0.15)', margin: '14px 0' }} />
+
+            {/* Manage Mods */}
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                👮 Manage Moderators
+              </div>
+
+              {/* Current mod list */}
+              <div style={{ marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {modList.map((mod) => (
+                  <div key={mod} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+                    background: 'rgba(239,68,68,0.07)', borderRadius: '8px', padding: '6px 10px',
+                  }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all', flex: 1 }}>
+                      {mod === '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi' ? `${mod.slice(0, 8)}… (owner)` : `${mod.slice(0, 8)}…${mod.slice(-6)}`}
+                    </span>
+                    {mod !== '9QeT88EePX6w7DsTWe5Tpx9s5go6QfxrUtpxtFeznfxi' && mod !== wallet && (
+                      <button
+                        onClick={() => {
+                          if (!socket) return;
+                          socket.emit('mod_remove_moderator', { wallet, targetWallet: mod });
+                        }}
+                        style={{
+                          background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)',
+                          borderRadius: '6px', padding: '3px 8px', cursor: 'pointer',
+                          fontSize: '10px', color: '#f87171', fontFamily: 'var(--font-display)', fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {modList.length === 0 && (
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Loading…</div>
+                )}
+              </div>
+
+              {/* Add mod input */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="Wallet address to add as mod"
+                  value={newModWallet}
+                  onChange={e => setNewModWallet(e.target.value)}
+                  style={{
+                    flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                    borderRadius: '8px', padding: '7px 10px', color: 'var(--text-primary)',
+                    fontSize: '11px', fontFamily: 'monospace', outline: 'none',
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (!socket || !newModWallet.trim()) return;
+                    const onResult = (res: { success: boolean; error?: string; wallet?: string }) => {
+                      setModMgmtMsg(res.success ? `✓ Added ${res.wallet?.slice(0,8)}…` : `✗ ${res.error}`);
+                      if (res.success) { setNewModWallet(''); socket.emit('mod_get_moderators', { wallet }); }
+                      setTimeout(() => setModMgmtMsg(''), 3000);
+                      socket.off('mod_add_moderator_result', onResult);
+                    };
+                    socket.once('mod_add_moderator_result', onResult);
+                    socket.emit('mod_add_moderator', { wallet, targetWallet: newModWallet.trim() });
+                  }}
+                  style={{
+                    background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
+                    borderRadius: '8px', padding: '7px 12px', cursor: 'pointer',
+                    fontSize: '11px', color: '#f87171', fontFamily: 'var(--font-display)', fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  + Add
+                </button>
+              </div>
+              {modMgmtMsg && (
+                <div style={{ marginTop: '6px', fontSize: '11px', fontFamily: 'var(--font-display)', fontWeight: 600,
+                  color: modMgmtMsg.startsWith('✓') ? '#10b981' : '#f87171' }}>
+                  {modMgmtMsg}
+                </div>
+              )}
+            </div>
           </div>
           )}
 
